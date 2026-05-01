@@ -19,43 +19,6 @@ async function upload() {
 }
 
 /* =========================
-   画像前処理（超重要）
-========================= */
-function preprocessImage(file) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = URL.createObjectURL(file);
-
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-
-      canvas.width = img.width;
-      canvas.height = img.height;
-
-      ctx.drawImage(img, 0, 0);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      // グレースケール＋2値化
-      for (let i = 0; i < data.length; i += 4) {
-        const gray = data[i]*0.3 + data[i+1]*0.59 + data[i+2]*0.11;
-        const v = gray > 150 ? 255 : 0;
-
-        data[i] = v;
-        data[i+1] = v;
-        data[i+2] = v;
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-
-      resolve(canvas);
-    };
-  });
-}
-
-/* =========================
    OCR本体
 ========================= */
 async function runOCR(file) {
@@ -69,23 +32,21 @@ async function runOCR(file) {
     preserve_interword_spaces: 1
   });
 
-  const processed = await preprocessImage(file);
-
-  const { data } = await worker.recognize(processed);
+  const { data } = await worker.recognize(file);
 
   await worker.terminate();
 
   console.log("OCR結果:", data.text);
 
   const nums = extractAccountCandidates(data.text);
-  const best = pickBestAccount(data.text, nums);
+  const account = nums[0] || "";
   const company = extractCompany(data.text);
 
   return {
     file: URL.createObjectURL(file),
-    account: best || "",
+    account,
     company: company || "未判定",
-    status: best ? "ok" : "error"
+    status: account ? "ok" : "error"
   };
 }
 
@@ -107,6 +68,7 @@ function render() {
           ${item.status === 'ok' ? item.account : '未判定'}
         </div>
       </div>
+
       <div class="actions">
         <button onclick="preview('${item.file}')">表示</button>
         <button onclick="del(${i})">削除</button>
@@ -129,83 +91,50 @@ function del(i) {
 }
 
 /* =========================
-   口座番号抽出（最強版）
+   テキスト正規化（最重要）
+========================= */
+function normalizeText(text) {
+  return text
+    .replace(/\s+/g, '') // ★スペース完全除去
+    .replace(/①/g,'1').replace(/②/g,'2').replace(/③/g,'3')
+    .replace(/④/g,'4').replace(/⑤/g,'5').replace(/⑥/g,'6')
+    .replace(/⑦/g,'7').replace(/⑧/g,'8').replace(/⑨/g,'9')
+    .replace(/⓪/g,'0')
+    .replace(/[０-９]/g, s =>
+      String.fromCharCode(s.charCodeAt(0) - 65248)
+    );
+}
+
+/* =========================
+   口座番号抽出（最終ロジック）
 ========================= */
 function extractAccountCandidates(text) {
   if (!text) return [];
 
-  // 丸数字変換
-  const map = {
-    '①':'1','②':'2','③':'3','④':'4','⑤':'5',
-    '⑥':'6','⑦':'7','⑧':'8','⑨':'9','⓪':'0'
-  };
-
-  let cleaned = text;
-
-  for (let k in map) {
-    cleaned = cleaned.split(k).join(map[k]);
-  }
-
-  // 全角→半角
-  cleaned = cleaned.replace(/[０-９]/g, s =>
-    String.fromCharCode(s.charCodeAt(0) - 65248)
-  );
+  const cleaned = normalizeText(text);
 
   console.log("正規化:", cleaned);
 
-  const keywords = ["口座番号", "口座", "番号", "普通"];
-
-  let results = [];
-
-  for (let key of keywords) {
-    const idx = cleaned.indexOf(key);
-    if (idx !== -1) {
-      const slice = cleaned.slice(idx, idx + 120);
-
-      console.log("範囲:", slice);
-
-      const nums = slice.match(/\d{6,8}/g);
-      if (nums) {
-        results = nums;
-        break;
-      }
-    }
+  // ★完全一致（最強）
+  const direct = cleaned.match(/口座番号[:：]?(\d{6,8})/);
+  if (direct) {
+    console.log("完全一致:", direct[1]);
+    return [direct[1]];
   }
 
-  if (!results.length) {
-    results = cleaned.match(/\d{6,8}/g) || [];
+  // ★少しゆるい一致
+  const loose = cleaned.match(/口座(\d{6,8})/);
+  if (loose) {
+    console.log("準一致:", loose[1]);
+    return [loose[1]];
   }
 
-  console.log("候補:", results);
+  // fallback
+  const nums = cleaned.match(/\d{6,8}/g) || [];
 
-  return [...new Set(results)];
-}
+  console.log("候補:", nums);
 
-/* =========================
-   最も近い口座番号
-========================= */
-function pickBestAccount(text, nums) {
-  if (!nums.length) return "";
-
-  const base = text.indexOf("口座");
-  if (base === -1) return nums[0];
-
-  let best = "";
-  let min = Infinity;
-
-  for (let n of nums) {
-    const i = text.indexOf(n);
-    const dist = Math.abs(i - base);
-
-    if (dist < min) {
-      min = dist;
-      best = n;
-    }
-  }
-
-  console.log("選択:", best);
-
-  return best;
+  return [...new Set(nums)];
 }
 
 /* =========================
@@ -234,7 +163,7 @@ function extractCompany(text) {
 ========================= */
 function openSend() {
   if (dataList.some(d => d.status === 'error')) {
-    alert("未判定あり");
+    alert("未判定があります");
     return;
   }
   document.getElementById('sendBox').style.display = 'block';

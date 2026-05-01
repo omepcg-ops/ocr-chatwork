@@ -6,7 +6,7 @@ let settings = [];
 ========================= */
 async function upload() {
   const files = document.getElementById('files').files;
-  if (!files.length) return alert("ファイルを選択してください");
+  if (!files.length) return alert("ファイル選択して");
 
   dataList = [];
 
@@ -19,7 +19,44 @@ async function upload() {
 }
 
 /* =========================
-   OCR本体（v4対応）
+   画像前処理（超重要）
+========================= */
+function preprocessImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // グレースケール＋2値化
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i]*0.3 + data[i+1]*0.59 + data[i+2]*0.11;
+        const v = gray > 150 ? 255 : 0;
+
+        data[i] = v;
+        data[i+1] = v;
+        data[i+2] = v;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      resolve(canvas);
+    };
+  });
+}
+
+/* =========================
+   OCR本体
 ========================= */
 async function runOCR(file) {
   const worker = await Tesseract.createWorker();
@@ -27,21 +64,28 @@ async function runOCR(file) {
   await worker.loadLanguage('jpn+eng');
   await worker.initialize('jpn+eng');
 
-  const { data } = await worker.recognize(file);
+  await worker.setParameters({
+    tessedit_pageseg_mode: 6,
+    preserve_interword_spaces: 1
+  });
+
+  const processed = await preprocessImage(file);
+
+  const { data } = await worker.recognize(processed);
 
   await worker.terminate();
 
   console.log("OCR結果:", data.text);
 
   const nums = extractAccountCandidates(data.text);
-  const bestAccount = pickBestAccount(data.text, nums);
+  const best = pickBestAccount(data.text, nums);
   const company = extractCompany(data.text);
 
   return {
     file: URL.createObjectURL(file),
-    account: bestAccount || "",
+    account: best || "",
     company: company || "未判定",
-    status: bestAccount ? "ok" : "error"
+    status: best ? "ok" : "error"
   };
 }
 
@@ -63,7 +107,6 @@ function render() {
           ${item.status === 'ok' ? item.account : '未判定'}
         </div>
       </div>
-
       <div class="actions">
         <button onclick="preview('${item.file}')">表示</button>
         <button onclick="del(${i})">削除</button>
@@ -91,7 +134,7 @@ function del(i) {
 function extractAccountCandidates(text) {
   if (!text) return [];
 
-  // 丸数字 → 数字
+  // 丸数字変換
   const map = {
     '①':'1','②':'2','③':'3','④':'4','⑤':'5',
     '⑥':'6','⑦':'7','⑧':'8','⑨':'9','⓪':'0'
@@ -103,15 +146,14 @@ function extractAccountCandidates(text) {
     cleaned = cleaned.split(k).join(map[k]);
   }
 
-  // 全角 → 半角
+  // 全角→半角
   cleaned = cleaned.replace(/[０-９]/g, s =>
     String.fromCharCode(s.charCodeAt(0) - 65248)
   );
 
   console.log("正規化:", cleaned);
 
-  // キーワード
-  const keywords = ["口座番号", "口座", "番号", "普通預金"];
+  const keywords = ["口座番号", "口座", "番号", "普通"];
 
   let results = [];
 
@@ -120,7 +162,7 @@ function extractAccountCandidates(text) {
     if (idx !== -1) {
       const slice = cleaned.slice(idx, idx + 120);
 
-      console.log("抽出範囲:", slice);
+      console.log("範囲:", slice);
 
       const nums = slice.match(/\d{6,8}/g);
       if (nums) {
@@ -130,7 +172,6 @@ function extractAccountCandidates(text) {
     }
   }
 
-  // fallback
   if (!results.length) {
     results = cleaned.match(/\d{6,8}/g) || [];
   }
@@ -141,7 +182,7 @@ function extractAccountCandidates(text) {
 }
 
 /* =========================
-   最も近い口座番号を選ぶ
+   最も近い口座番号
 ========================= */
 function pickBestAccount(text, nums) {
   if (!nums.length) return "";
@@ -162,7 +203,7 @@ function pickBestAccount(text, nums) {
     }
   }
 
-  console.log("選択口座:", best);
+  console.log("選択:", best);
 
   return best;
 }
@@ -171,8 +212,6 @@ function pickBestAccount(text, nums) {
    会社名抽出
 ========================= */
 function extractCompany(text) {
-  if (!text) return "";
-
   const lines = text.split("\n");
 
   for (let line of lines) {
@@ -195,7 +234,7 @@ function extractCompany(text) {
 ========================= */
 function openSend() {
   if (dataList.some(d => d.status === 'error')) {
-    alert("未判定があります");
+    alert("未判定あり");
     return;
   }
   document.getElementById('sendBox').style.display = 'block';
@@ -207,10 +246,7 @@ async function send() {
   for (let item of dataList) {
     const match = settings.find(s => s.account === item.account);
 
-    if (!match) {
-      console.log("未登録:", item.account);
-      continue;
-    }
+    if (!match) continue;
 
     await fetch('/send', {
       method: 'POST',

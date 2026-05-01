@@ -1,7 +1,7 @@
 let dataList = [];
 let settings = [];
 
-/* ===== 初期ロード（ここ超重要） ===== */
+/* ===== 初期ロード ===== */
 window.onload = async () => {
   await loadSettings();
 };
@@ -11,14 +11,38 @@ async function loadSettings() {
   try {
     const res = await fetch('/settings');
     settings = await res.json();
-    console.log("設定読み込み:", settings);
-  } catch (e) {
-    console.log("設定読み込み失敗");
+    console.log("設定:", settings);
+  } catch {
     settings = [];
   }
 }
 
-/* ===== アップロード（OCR） ===== */
+/* ===== 画像前処理（白黒強調） ===== */
+async function preprocessImage(file) {
+  const img = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = img.width;
+  canvas.height = img.height;
+
+  ctx.drawImage(img, 0, 0);
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+    const val = avg > 150 ? 255 : 0;
+    data[i] = data[i+1] = data[i+2] = val;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  return canvas;
+}
+
+/* ===== OCR ===== */
 async function upload() {
   const files = document.getElementById('files').files;
 
@@ -33,15 +57,19 @@ async function upload() {
 
     console.log("OCR開始:", file.name);
 
-    const text = await Tesseract.recognize(file, 'jpn')
-      .then(res => res.data.text)
-      .catch(() => "");
+    const processed = await preprocessImage(file);
+
+    const text = await Tesseract.recognize(processed, 'jpn', {
+      tessedit_char_whitelist: '0123456789'
+    })
+    .then(res => res.data.text)
+    .catch(() => "");
 
     console.log("OCR結果:", text);
 
     const nums = extractAccountCandidates(text);
 
-    console.log("抽出数字:", nums);
+    console.log("抽出:", nums);
 
     let found = null;
 
@@ -57,7 +85,7 @@ async function upload() {
     const url = URL.createObjectURL(file);
 
     dataList.push({
-      file: file,
+      file,
       preview: url,
       company: found ? found.name : "未判定",
       status: found ? "ok" : "error",
@@ -195,7 +223,6 @@ function addSetting(){
   }
 
   settings.push({ account, name, roomId });
-
   renderSettings();
 
   document.getElementById('account').value = '';
@@ -222,27 +249,11 @@ function closeSend() {
   document.getElementById('sendBox').style.display = 'none';
 }
 
-/* ===== 数字補正 ===== */
-function normalizeNumber(str) {
-  return str
-    .replace(/O/g, '0')
-    .replace(/o/g, '0')
-    .replace(/I/g, '1')
-    .replace(/l/g, '1')
-    .replace(/S/g, '5')
-    .replace(/B/g, '8');
-}
-
-/* ===== 数字抽出（強化版） ===== */
+/* ===== 数字抽出 ===== */
 function extractAccountCandidates(text) {
   if (!text) return [];
 
-  text = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-
   let nums = text.match(/\d{6,8}/g) || [];
-
-  nums = nums.map(n => normalizeNumber(n))
-             .filter(n => Number(n) > 100000);
 
   return [...new Set(nums)];
 }

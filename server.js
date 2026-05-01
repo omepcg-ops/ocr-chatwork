@@ -1,236 +1,144 @@
-require('dotenv').config();
-const express = require('express');
-const multer = require('multer');
-const axios = require('axios');
-const cors = require('cors');
-const sharp = require('sharp');
-const Tesseract = require('tesseract.js');
-const fs = require('fs');
-const FormData = require('form-data');
-const path = require('path');
+const express = require("express");
+const multer = require("multer");
+const axios = require("axios");
+const cors = require("cors");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
+app.use(express.json({ limit: "10mb" }));
 
-// ★uploads公開
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const upload = multer({ storage: multer.memoryStorage() });
 
-const upload = multer({ dest: 'uploads/' });
-
-/* ===== mappingファイルのパス固定 ===== */
-const mappingPath = path.join(__dirname, 'mapping.json');
-
-/* ===== 初期ファイル作成 ===== */
-if (!fs.existsSync(mappingPath)) {
-  fs.writeFileSync(mappingPath, '[]');
-}
-
-/* ===== 設定 ===== */
-function loadMapping() {
+/* =========================
+   Google Vision OCR
+========================= */
+app.post("/ocr", upload.single("file"), async (req, res) => {
   try {
-    const data = fs.readFileSync(mappingPath, 'utf-8');
-    return JSON.parse(data);
-  } catch (e) {
-    console.error("読み込みエラー:", e);
-    return [];
-  }
-}
-
-function saveMapping(data) {
-  try {
-    fs.writeFileSync(mappingPath, JSON.stringify(data, null, 2));
-    console.log("保存成功:", data);
-  } catch (e) {
-    console.error("保存失敗:", e);
-  }
-}
-
-let mapping = loadMapping();
-
-/* ===== OCR ===== */
-async function runOCR(imagePath) {
-  try {
-    const processed = imagePath + "_cut.jpg";
-
-    const img = sharp(imagePath);
-    const meta = await img.metadata();
-
-    await img
-      .extract({
-        left: 0,
-        top: Math.floor(meta.height * 0.4),
-        width: meta.width,
-        height: Math.floor(meta.height * 0.6)
-      })
-      .grayscale()
-      .normalize()
-      .sharpen()
-      .toFile(processed);
-
-    const result = await Tesseract.recognize(processed, 'eng');
-    return result.data.text;
-
-  } catch (e) {
-    console.log("OCR error", e);
-    return "";
-  }
-}
-
-/* ===== 数字補正 ===== */
-function normalizeNumber(str) {
-  return str
-    .replace(/O/g, '0')
-    .replace(/o/g, '0')
-    .replace(/I/g, '1')
-    .replace(/l/g, '1')
-    .replace(/S/g, '5')
-    .replace(/B/g, '8');
-}
-
-/* ===== 口座抽出 ===== */
-function extractAccountCandidates(text) {
-  if (!text) return [];
-
-  text = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
-
-  const keywords = ["口座","銀行","振込","普通","当座","番号"];
-  let candidates = [];
-
-  for (let k of keywords) {
-    const matches = text.match(new RegExp(`${k}.{0,60}`, 'g'));
-    if (matches) {
-      matches.forEach(area => {
-        let nums = area.match(/\d{6,8}/g) || [];
-        nums = nums.map(n => normalizeNumber(n))
-                   .filter(n => Number(n) > 100000);
-        candidates.push(...nums);
-      });
-    }
-  }
-
-  let all = text.match(/\d{6,8}/g) || [];
-  all = all.map(n => normalizeNumber(n))
-           .filter(n => Number(n) > 100000);
-
-  candidates.push(...all);
-
-  return [...new Set(candidates)];
-}
-
-/* ===== OCR処理 ===== */
-app.post('/upload', upload.array('images'), async (req, res) => {
-  const results = [];
-
-  for (let file of req.files) {
-    const text = await runOCR(file.path);
-    const nums = extractAccountCandidates(text);
-
-    let found = null;
-
-    for (let n of nums) {
-      found = mapping.find(m =>
-        n === m.account ||
-        n.includes(m.account) ||
-        m.account.includes(n)
-      );
-      if (found) break;
+    if (!req.file) {
+      return res.status(400).json({ error: "ファイルなし" });
     }
 
-    results.push({
-      file: file.filename,
-      company: found ? found.name : "不明",
-      status: found ? "ok" : "error",
-      roomId: found ? found.roomId : null
+    const base64 = req.file.buffer.toString("base64");
+
+    const response = await axios.post(
+      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`,
+      {
+        requests: [
+          {
+            image: { content: base64 },
+            features: [{ type: "TEXT_DETECTION" }]
+          }
+        ]
+      }
+    );
+
+    const text =
+      response.data.responses[0]?.fullTextAnnotation?.text || "";
+
+    console.log("OCR結果:", text);
+
+    const account = extractAccountNumber(text);
+
+    res.json({
+      text,
+      account
     });
-  }
 
-  res.json(results);
+  } catch (err) {
+    console.error(err.response?.data || err);
+    res.status(500).json({ error: "OCR失敗" });
+  }
 });
 
-/* ===== 送信 ===== */
-app.post('/send', async (req, res) => {
-  try {
-    const { list, message } = req.body;
+/* =========================
+   口座番号抽出（超強化版）
+========================= */
+function extractAccountNumber(text) {
+  if (!text) return "未判定";
 
-    const groups = {};
+  // 丸数字 → 通常数字
+  const circleMap = {
+    "①": "1","②": "2","③": "3","④": "4","⑤": "5",
+    "⑥": "6","⑦": "7","⑧": "8","⑨": "9","⑩": "10",
+    "⓪": "0"
+  };
 
-    list.forEach(item => {
-      if (!item.roomId) return;
-      if (!groups[item.roomId]) groups[item.roomId] = [];
-      groups[item.roomId].push(item);
-    });
+  let normalized = text;
 
-    for (let roomId in groups) {
+  Object.keys(circleMap).forEach(k => {
+    normalized = normalized.split(k).join(circleMap[k]);
+  });
 
-      for (let item of groups[roomId]) {
-        const filePath = path.join(__dirname, 'uploads', item.file);
+  // 全角→半角
+  normalized = normalized.replace(/[０-９]/g, s =>
+    String.fromCharCode(s.charCodeAt(0) - 65248)
+  );
 
-        const form = new FormData();
-        form.append('file', fs.createReadStream(filePath), {
-          filename: `${item.company || 'invoice'}.jpg`,
-          contentType: 'image/jpeg'
-        });
+  // スペース削除（重要）
+  const noSpace = normalized.replace(/\s/g, "");
 
-        await axios.post(
-          `https://api.chatwork.com/v2/rooms/${roomId}/files`,
-          form,
-          {
-            headers: {
-              'X-ChatWorkToken': process.env.CHATWORK_TOKEN,
-              ...form.getHeaders()
-            }
-          }
-        );
+  console.log("正規化:", noSpace);
 
-        await new Promise(r => setTimeout(r, 800));
-      }
+  // 「口座番号」周辺を最優先で取る
+  const keywordIndex = noSpace.indexOf("口座番号");
 
-      await new Promise(r => setTimeout(r, 2000));
+  let best = null;
 
-      await axios.post(
-        `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
-        `body=${encodeURIComponent(message)}`,
-        {
-          headers: {
-            'X-ChatWorkToken': process.env.CHATWORK_TOKEN,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        }
-      );
+  if (keywordIndex !== -1) {
+    const area = noSpace.slice(keywordIndex, keywordIndex + 50);
+
+    const match = area.match(/\d{6,10}/);
+    if (match) {
+      best = match[0];
+      console.log("キーワード一致:", best);
+      return best;
     }
+  }
+
+  // fallback（全体から候補）
+  const candidates = noSpace.match(/\d{6,10}/g) || [];
+  console.log("候補:", candidates);
+
+  if (candidates.length === 0) return "未判定";
+
+  // 最も長い数字を採用
+  return candidates.sort((a, b) => b.length - a.length)[0];
+}
+
+/* =========================
+   Chatwork送信
+========================= */
+app.post("/send", async (req, res) => {
+  try {
+    const { message, roomId } = req.body;
+
+    if (!message || !roomId) {
+      return res.status(400).json({ error: "不足" });
+    }
+
+    await axios.post(
+      `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
+      new URLSearchParams({ body: message }),
+      {
+        headers: {
+          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
+          "Content-Type": "application/x-www-form-urlencoded"
+        }
+      }
+    );
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("送信エラー:", err);
+    console.error(err.response?.data || err);
     res.status(500).json({ error: "送信失敗" });
   }
 });
 
-/* ===== 設定 ===== */
-app.get('/settings', (req, res) => {
-  mapping = loadMapping();
-  res.json(mapping);
-});
-
-app.post('/settings', (req, res) => {
-  try {
-    console.log("受信データ:", req.body);
-
-    mapping = req.body;
-    saveMapping(mapping);
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.error("保存エラー:", e);
-    res.status(500).json({ error: "保存失敗" });
-  }
-});
-
-/* ===== 起動 ===== */
-app.listen(3000, () => {
-  console.log("Server started");
+/* =========================
+   起動
+========================= */
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log("Server started:", PORT);
 });

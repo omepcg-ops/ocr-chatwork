@@ -33,7 +33,7 @@ async function upload() {
 
     console.log("OCR開始:", file.name);
 
-    const text = await Tesseract.recognize(file, 'eng+jpn')
+    const text = await Tesseract.recognize(file, 'jpn')
       .then(res => res.data.text)
       .catch(() => "");
 

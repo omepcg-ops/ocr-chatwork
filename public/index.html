@@ -1,1 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css">
+</head>
 
+<body>
+
+<div class="header">
+  納品書送信くん
+  <button class="icon-btn" onclick="openSettings()">⚙️</button>
+</div>
+
+<div class="container">
+
+  <div class="upload-box">
+    <input type="file" id="files" multiple>
+    <br><br>
+    <button class="btn-primary" onclick="upload()">OCR実行</button>
+    <button class="btn-secondary" onclick="openSend()">一括送信</button>
+  </div>
+
+  <div id="list"></div>
+
+</div>
+
+<!-- 送信 -->
+<div id="sendBox" class="modal" style="display:none">
+  <textarea id="msg" placeholder="メッセージ"></textarea>
+  <br><br>
+  <button class="btn-primary" onclick="send()">送信</button>
+  <button onclick="closeSend()">閉じる</button>
+</div>
+
+<!-- 設定 -->
+<div id="settings" class="modal" style="display:none">
+  <h3>設定</h3>
+
+  <div id="settingsList"></div>
+
+  <input id="account" placeholder="口座番号">
+  <input id="name" placeholder="会社名">
+  <input id="room" placeholder="ルームID">
+
+  <br><br>
+  <button class="btn-primary" onclick="addSetting()">追加</button>
+  <button class="btn-secondary" onclick="saveSettings()">保存</button>
+  <button onclick="closeSettings()">閉じる</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

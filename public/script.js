@@ -22,7 +22,10 @@ async function upload() {
    OCR本体（軽量＋安定）
 ========================= */
 async function runOCR(file) {
-  const worker = await Tesseract.createWorker('jpn+eng');
+  const worker = await Tesseract.createWorker();
+
+  await worker.loadLanguage('jpn+eng');
+  await worker.initialize('jpn+eng');
 
   const { data } = await worker.recognize(file);
 

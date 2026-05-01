@@ -1,102 +1,49 @@
 let dataList = [];
 let settings = [];
 
-/* ===== 初期ロード ===== */
-window.onload = async () => {
-  await loadSettings();
-};
-
-/* ===== 設定ロード ===== */
-async function loadSettings() {
-  try {
-    const res = await fetch('/settings');
-    settings = await res.json();
-    console.log("設定:", settings);
-  } catch {
-    settings = [];
-  }
-}
-
-/* ===== 画像前処理（白黒強調） ===== */
-async function preprocessImage(file) {
-  const img = await createImageBitmap(file);
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-
-  canvas.width = img.width;
-  canvas.height = img.height;
-
-  ctx.drawImage(img, 0, 0);
-
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const avg = (data[i] + data[i+1] + data[i+2]) / 3;
-    const val = avg > 150 ? 255 : 0;
-    data[i] = data[i+1] = data[i+2] = val;
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-
-  return canvas;
-}
-
-/* ===== OCR ===== */
+/* =========================
+   OCR 実行
+========================= */
 async function upload() {
   const files = document.getElementById('files').files;
-
-  if (files.length === 0) {
-    alert("ファイル選択して");
-    return;
-  }
+  if (!files.length) return alert("ファイル選んで");
 
   dataList = [];
 
   for (let file of files) {
-
-    console.log("OCR開始:", file.name);
-
-    const processed = await preprocessImage(file);
-
-    const text = await Tesseract.recognize(processed, 'jpn', {
-      tessedit_char_whitelist: '0123456789'
-    })
-    .then(res => res.data.text)
-    .catch(() => "");
-
-    console.log("OCR結果:", text);
-
-    const nums = extractAccountCandidates(text);
-
-    console.log("抽出:", nums);
-
-    let found = null;
-
-    for (let n of nums) {
-      found = settings.find(m =>
-        n === m.account ||
-        n.includes(m.account) ||
-        m.account.includes(n)
-      );
-      if (found) break;
-    }
-
-    const url = URL.createObjectURL(file);
-
-    dataList.push({
-      file,
-      preview: url,
-      company: found ? found.name : "未判定",
-      status: found ? "ok" : "error",
-      roomId: found ? found.roomId : null
-    });
+    const result = await runOCR(file);
+    dataList.push(result);
   }
 
   render();
 }
 
-/* ===== 表示 ===== */
+/* =========================
+   OCR本体（軽量＋安定）
+========================= */
+async function runOCR(file) {
+  const worker = await Tesseract.createWorker('jpn+eng');
+
+  const { data } = await worker.recognize(file);
+
+  await worker.terminate();
+
+  console.log("OCR結果:", data.text);
+
+  const accountCandidates = extractAccountCandidates(data.text);
+  const company = extractCompany(data.text);
+
+  return {
+    file: URL.createObjectURL(file),
+    account: accountCandidates[0] || "",
+    company: company || "未判定",
+    status: accountCandidates.length ? "ok" : "error"
+  };
+}
+
+/* =========================
+   表示
+========================= */
 function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -109,12 +56,12 @@ function render() {
       <div class="row">
         <div class="title">${item.company}</div>
         <div class="${item.status === 'ok' ? 'ok' : 'error'}">
-          ${item.status === 'ok' ? '準備完了' : '未判定'}
+          ${item.status === 'ok' ? item.account : '未判定'}
         </div>
       </div>
 
       <div class="actions">
-        <button onclick="preview(${i})">表示</button>
+        <button onclick="preview('${item.file}')">表示</button>
         <button onclick="del(${i})">削除</button>
       </div>
     `;
@@ -123,62 +70,111 @@ function render() {
   });
 }
 
-/* ===== プレビュー ===== */
-function preview(i){
-  window.open(dataList[i].preview);
+function preview(f) {
+  window.open(f);
 }
 
-/* ===== 削除 ===== */
-function del(i){
-  if(confirm("削除しますか？")){
-    dataList.splice(i,1);
+function del(i) {
+  if (confirm("削除しますか？")) {
+    dataList.splice(i, 1);
     render();
   }
 }
 
-/* ===== 送信 ===== */
-function openSend(){
-  if(dataList.some(d=>d.status==='error')){
+/* =========================
+   口座番号抽出（超重要）
+========================= */
+function extractAccountCandidates(text) {
+  if (!text) return [];
+
+  // 丸数字 → 通常数字
+  const map = {
+    '①':'1','②':'2','③':'3','④':'4','⑤':'5',
+    '⑥':'6','⑦':'7','⑧':'8','⑨':'9','⓪':'0'
+  };
+
+  let cleaned = text;
+
+  for (let k in map) {
+    cleaned = cleaned.split(k).join(map[k]);
+  }
+
+  // 全角数字 → 半角
+  cleaned = cleaned.replace(/[０-９]/g, s =>
+    String.fromCharCode(s.charCodeAt(0) - 65248)
+  );
+
+  // 範囲絞る（神ポイント）
+  const area = cleaned.match(/振込先([\s\S]{0,200})名義/);
+  if (area) cleaned = area[1];
+
+  console.log("抽出対象:", cleaned);
+
+  // 口座番号優先
+  let match = cleaned.match(/口座番号[:：]?\s*([0-9\s]{4,15})/);
+
+  let target = match ? match[1] : cleaned;
+
+  // 数字のみ抽出
+  const nums = (target.match(/\d{6,8}/g) || []);
+
+  console.log("口座候補:", nums);
+
+  return [...new Set(nums)];
+}
+
+/* =========================
+   会社名抽出
+========================= */
+function extractCompany(text) {
+  if (!text) return "";
+
+  const lines = text.split("\n");
+
+  for (let line of lines) {
+    if (line.includes("会社名")) {
+      return line.replace(/会社名[:：]/, "").trim();
+    }
+  }
+
+  // fallback
+  for (let line of lines) {
+    if (line.includes("株式会社")) {
+      return line.trim();
+    }
+  }
+
+  return "";
+}
+
+/* =========================
+   送信
+========================= */
+function openSend() {
+  if (dataList.some(d => d.status === 'error')) {
     alert("未判定があります");
     return;
   }
-  document.getElementById('sendBox').style.display='block';
+  document.getElementById('sendBox').style.display = 'block';
 }
 
-async function send(){
+async function send() {
   const msg = document.getElementById('msg').value;
 
-  const groups = {};
+  for (let item of dataList) {
+    const match = settings.find(s => s.account === item.account);
 
-  dataList.forEach(item => {
-    if (!item.roomId) return;
-    if (!groups[item.roomId]) groups[item.roomId] = [];
-    groups[item.roomId].push(item);
-  });
-
-  for (let roomId in groups) {
-
-    for (let item of groups[roomId]) {
-
-      const fd = new FormData();
-      fd.append('file', item.file);
-      fd.append('roomId', roomId);
-      fd.append('company', item.company);
-
-      await fetch('/send-image', {
-        method: 'POST',
-        body: fd
-      });
-
-      await new Promise(r => setTimeout(r, 500));
+    if (!match) {
+      console.log("未登録:", item.account);
+      continue;
     }
 
-    await fetch('/send-message', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        roomId,
-        message: msg
+    await fetch('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId: match.roomId,
+        message: `${match.name}\n${msg}`
       })
     });
   }
@@ -186,10 +182,11 @@ async function send(){
   alert("送信完了");
 }
 
-/* ===== 設定 ===== */
-async function openSettings(){
-  document.getElementById('settings').style.display='block';
-  await loadSettings();
+/* =========================
+   設定
+========================= */
+function openSettings() {
+  document.getElementById('settings').style.display = 'block';
   renderSettings();
 }
 
@@ -199,23 +196,25 @@ function renderSettings() {
 
   settings.forEach((m, i) => {
     const div = document.createElement('div');
+
     div.innerHTML = `
       ${m.account} - ${m.name}
       <button onclick="removeSetting(${i})">削除</button>
     `;
+
     box.appendChild(div);
   });
 }
 
-function removeSetting(i){
-  settings.splice(i,1);
+function removeSetting(i) {
+  settings.splice(i, 1);
   renderSettings();
 }
 
-function addSetting(){
-  const account = document.getElementById('account').value.trim();
-  const name = document.getElementById('name').value.trim();
-  const roomId = document.getElementById('room').value.trim();
+function addSetting() {
+  const account = document.getElementById('account').value;
+  const name = document.getElementById('name').value;
+  const roomId = document.getElementById('room').value;
 
   if (!account || !name || !roomId) {
     alert("全部入力して");
@@ -223,6 +222,7 @@ function addSetting(){
   }
 
   settings.push({ account, name, roomId });
+
   renderSettings();
 
   document.getElementById('account').value = '';
@@ -230,17 +230,16 @@ function addSetting(){
   document.getElementById('room').value = '';
 }
 
-async function saveSettings() {
-  await fetch('/settings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings)
-  });
-
+function saveSettings() {
+  localStorage.setItem("settings", JSON.stringify(settings));
   alert("保存完了");
 }
 
-/* ===== 閉じる ===== */
+function loadSettings() {
+  const saved = localStorage.getItem("settings");
+  if (saved) settings = JSON.parse(saved);
+}
+
 function closeSettings() {
   document.getElementById('settings').style.display = 'none';
 }
@@ -249,11 +248,9 @@ function closeSend() {
   document.getElementById('sendBox').style.display = 'none';
 }
 
-/* ===== 数字抽出 ===== */
-function extractAccountCandidates(text) {
-  if (!text) return [];
-
-  let nums = text.match(/\d{6,8}/g) || [];
-
-  return [...new Set(nums)];
-}
+/* =========================
+   初期化
+========================= */
+window.onload = () => {
+  loadSettings();
+};

@@ -1,0 +1,156 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f4f6fb;
+  font-size: 16px;
+}
+
+/* ヘッダー */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* 歯車 */
+.icon-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: none;
+  background: #eef2ff;
+  font-size: 20px;
+}
+
+/* コンテナ */
+.container {
+  padding: 16px;
+}
+
+/* アップロード */
+.upload-box {
+  background: white;
+  padding: 20px;
+  border-radius: 18px;
+  box-shadow: 0 6px 25px rgba(0,0,0,0.05);
+  margin-bottom: 20px;
+}
+
+/* ファイル選択 */
+input[type="file"] {
+  font-size: 16px;
+}
+
+/* ボタン（スマホ特化） */
+button {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* メインボタン */
+.btn-primary {
+  background: #2563eb;
+  color: white;
+}
+
+/* サブボタン */
+.btn-secondary {
+  background: #e5e7eb;
+}
+
+/* カード */
+.card {
+  background: white;
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 6px 25px rgba(0,0,0,0.05);
+}
+
+/* 上段 */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 会社名 */
+.title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* 状態 */
+.ok {
+  color: #16a34a;
+  font-weight: bold;
+}
+
+.error {
+  color: #dc2626;
+  font-weight: bold;
+}
+
+/* ボタンエリア */
+.actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+/* ボタン半分 */
+.actions button {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+}
+
+/* モーダル */
+.modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.15);
+}
+
+/* 入力 */
+input, textarea {
+  width: 100%;
+  padding: 14px;
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+  font-size: 16px;
+}
+* {
+  box-sizing: border-box;
+}
+
+/* テキストエリア */
+textarea {
+  min-height: 100px;
+}
+
+/* 設定リスト */
+#settingsList div {
+  background: #f1f5f9;
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}

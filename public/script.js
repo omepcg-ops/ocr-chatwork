@@ -6,7 +6,7 @@ let settings = [];
 ========================= */
 async function upload() {
   const files = document.getElementById('files').files;
-  if (!files.length) return alert("ファイル選んで");
+  if (!files.length) return alert("ファイルを選択してください");
 
   dataList = [];
 
@@ -19,7 +19,7 @@ async function upload() {
 }
 
 /* =========================
-   OCR本体（軽量＋安定）
+   OCR本体（v4対応）
 ========================= */
 async function runOCR(file) {
   const worker = await Tesseract.createWorker();
@@ -33,14 +33,15 @@ async function runOCR(file) {
 
   console.log("OCR結果:", data.text);
 
-  const accountCandidates = extractAccountCandidates(data.text);
+  const nums = extractAccountCandidates(data.text);
+  const bestAccount = pickBestAccount(data.text, nums);
   const company = extractCompany(data.text);
 
   return {
     file: URL.createObjectURL(file),
-    account: accountCandidates[0] || "",
+    account: bestAccount || "",
     company: company || "未判定",
-    status: accountCandidates.length ? "ok" : "error"
+    status: bestAccount ? "ok" : "error"
   };
 }
 
@@ -85,12 +86,12 @@ function del(i) {
 }
 
 /* =========================
-   口座番号抽出（超重要）
+   口座番号抽出（最強版）
 ========================= */
 function extractAccountCandidates(text) {
   if (!text) return [];
 
-  // 丸数字 → 通常数字
+  // 丸数字 → 数字
   const map = {
     '①':'1','②':'2','③':'3','④':'4','⑤':'5',
     '⑥':'6','⑦':'7','⑧':'8','⑨':'9','⓪':'0'
@@ -102,28 +103,68 @@ function extractAccountCandidates(text) {
     cleaned = cleaned.split(k).join(map[k]);
   }
 
-  // 全角数字 → 半角
+  // 全角 → 半角
   cleaned = cleaned.replace(/[０-９]/g, s =>
     String.fromCharCode(s.charCodeAt(0) - 65248)
   );
 
-  // 範囲絞る（神ポイント）
-  const area = cleaned.match(/振込先([\s\S]{0,200})名義/);
-  if (area) cleaned = area[1];
+  console.log("正規化:", cleaned);
 
-  console.log("抽出対象:", cleaned);
+  // キーワード
+  const keywords = ["口座番号", "口座", "番号", "普通預金"];
 
-  // 口座番号優先
-  let match = cleaned.match(/口座番号[:：]?\s*([0-9\s]{4,15})/);
+  let results = [];
 
-  let target = match ? match[1] : cleaned;
+  for (let key of keywords) {
+    const idx = cleaned.indexOf(key);
+    if (idx !== -1) {
+      const slice = cleaned.slice(idx, idx + 120);
 
-  // 数字のみ抽出
-  const nums = (target.match(/\d{6,8}/g) || []);
+      console.log("抽出範囲:", slice);
 
-  console.log("口座候補:", nums);
+      const nums = slice.match(/\d{6,8}/g);
+      if (nums) {
+        results = nums;
+        break;
+      }
+    }
+  }
 
-  return [...new Set(nums)];
+  // fallback
+  if (!results.length) {
+    results = cleaned.match(/\d{6,8}/g) || [];
+  }
+
+  console.log("候補:", results);
+
+  return [...new Set(results)];
+}
+
+/* =========================
+   最も近い口座番号を選ぶ
+========================= */
+function pickBestAccount(text, nums) {
+  if (!nums.length) return "";
+
+  const base = text.indexOf("口座");
+  if (base === -1) return nums[0];
+
+  let best = "";
+  let min = Infinity;
+
+  for (let n of nums) {
+    const i = text.indexOf(n);
+    const dist = Math.abs(i - base);
+
+    if (dist < min) {
+      min = dist;
+      best = n;
+    }
+  }
+
+  console.log("選択口座:", best);
+
+  return best;
 }
 
 /* =========================
@@ -140,7 +181,6 @@ function extractCompany(text) {
     }
   }
 
-  // fallback
   for (let line of lines) {
     if (line.includes("株式会社")) {
       return line.trim();

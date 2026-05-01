@@ -1,21 +1,47 @@
 let dataList = [];
 let settings = [];
 
-/* ===== アップロード（OCRはフロントでやる） ===== */
+/* ===== 初期ロード（ここ超重要） ===== */
+window.onload = async () => {
+  await loadSettings();
+};
+
+/* ===== 設定ロード ===== */
+async function loadSettings() {
+  try {
+    const res = await fetch('/settings');
+    settings = await res.json();
+    console.log("設定読み込み:", settings);
+  } catch (e) {
+    console.log("設定読み込み失敗");
+    settings = [];
+  }
+}
+
+/* ===== アップロード（OCR） ===== */
 async function upload() {
   const files = document.getElementById('files').files;
+
+  if (files.length === 0) {
+    alert("ファイル選択して");
+    return;
+  }
 
   dataList = [];
 
   for (let file of files) {
 
-    // OCR（ブラウザ側）
+    console.log("OCR開始:", file.name);
+
     const text = await Tesseract.recognize(file, 'eng+jpn')
       .then(res => res.data.text)
       .catch(() => "");
 
-    // 数字抽出
+    console.log("OCR結果:", text);
+
     const nums = extractAccountCandidates(text);
+
+    console.log("抽出数字:", nums);
 
     let found = null;
 
@@ -28,7 +54,6 @@ async function upload() {
       if (found) break;
     }
 
-    // 一時URL（表示用）
     const url = URL.createObjectURL(file);
 
     dataList.push({
@@ -43,7 +68,7 @@ async function upload() {
   render();
 }
 
-/* ===== OCR表示 ===== */
+/* ===== 表示 ===== */
 function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -105,7 +130,6 @@ async function send(){
 
   for (let roomId in groups) {
 
-    // ===== 画像1枚ずつ送信 =====
     for (let item of groups[roomId]) {
 
       const fd = new FormData();
@@ -118,11 +142,9 @@ async function send(){
         body: fd
       });
 
-      // 安定のため待機
       await new Promise(r => setTimeout(r, 500));
     }
 
-    // ===== 最後にメッセージ =====
     await fetch('/send-message', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -139,10 +161,7 @@ async function send(){
 /* ===== 設定 ===== */
 async function openSettings(){
   document.getElementById('settings').style.display='block';
-
-  const res = await fetch('/settings');
-  settings = await res.json();
-
+  await loadSettings();
   renderSettings();
 }
 
@@ -152,12 +171,10 @@ function renderSettings() {
 
   settings.forEach((m, i) => {
     const div = document.createElement('div');
-
     div.innerHTML = `
       ${m.account} - ${m.name}
       <button onclick="removeSetting(${i})">削除</button>
     `;
-
     box.appendChild(div);
   });
 }
@@ -168,9 +185,9 @@ function removeSetting(i){
 }
 
 function addSetting(){
-  const account = document.getElementById('account').value;
-  const name = document.getElementById('name').value;
-  const roomId = document.getElementById('room').value;
+  const account = document.getElementById('account').value.trim();
+  const name = document.getElementById('name').value.trim();
+  const roomId = document.getElementById('room').value.trim();
 
   if (!account || !name || !roomId) {
     alert("全部入力して");
@@ -196,6 +213,7 @@ async function saveSettings() {
   alert("保存完了");
 }
 
+/* ===== 閉じる ===== */
 function closeSettings() {
   document.getElementById('settings').style.display = 'none';
 }
@@ -204,7 +222,7 @@ function closeSend() {
   document.getElementById('sendBox').style.display = 'none';
 }
 
-/* ===== 数字抽出 ===== */
+/* ===== 数字補正 ===== */
 function normalizeNumber(str) {
   return str
     .replace(/O/g, '0')
@@ -215,31 +233,16 @@ function normalizeNumber(str) {
     .replace(/B/g, '8');
 }
 
+/* ===== 数字抽出（強化版） ===== */
 function extractAccountCandidates(text) {
   if (!text) return [];
 
   text = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
 
-  const keywords = ["口座","銀行","振込","普通","当座","番号"];
-  let candidates = [];
+  let nums = text.match(/\d{6,8}/g) || [];
 
-  for (let k of keywords) {
-    const matches = text.match(new RegExp(`${k}.{0,60}`, 'g'));
-    if (matches) {
-      matches.forEach(area => {
-        let nums = area.match(/\d{6,8}/g) || [];
-        nums = nums.map(n => normalizeNumber(n))
-                   .filter(n => Number(n) > 100000);
-        candidates.push(...nums);
-      });
-    }
-  }
+  nums = nums.map(n => normalizeNumber(n))
+             .filter(n => Number(n) > 100000);
 
-  let all = text.match(/\d{6,8}/g) || [];
-  all = all.map(n => normalizeNumber(n))
-           .filter(n => Number(n) > 100000);
-
-  candidates.push(...all);
-
-  return [...new Set(candidates)];
+  return [...new Set(nums)];
 }

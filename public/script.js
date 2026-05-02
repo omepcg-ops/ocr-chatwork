@@ -161,19 +161,17 @@ window.onload = async () => {
 };
 
 /* =========================
-   グローバル公開（超重要）
+   グローバル公開（絶対これ）
 ========================= */
-if (typeof window !== "undefined") {
-  window.upload = upload;
-  window.send = send;
-  window.show = show;
-  window.removeItem = removeItem;
+window.upload = upload;
+window.send = send;
+window.show = show;
+window.removeItem = removeItem;
 
-  window.openSettings = openSettings;
-  window.closeSettings = closeSettings;
-  window.openSend = openSend;
-  window.closeSend = closeSend;
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.openSend = openSend;
+window.closeSend = closeSend;
 
-  window.addSetting = addSetting;
-  window.saveSettings = saveSettings;
-}
+window.addSetting = addSetting;
+window.saveSettings = saveSettings;

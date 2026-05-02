@@ -61,6 +61,25 @@ function removeItem(i) {
   render();
 }
 
+/* =========================
+   モーダル制御（これ抜けてる）
+========================= */
+function openSettings() {
+  document.getElementById("settings").style.display = "block";
+}
+
+function closeSettings() {
+  document.getElementById("settings").style.display = "none";
+}
+
+function openSend() {
+  document.getElementById("sendBox").style.display = "block";
+}
+
+function closeSend() {
+  document.getElementById("sendBox").style.display = "none";
+}
+
 /* 送信 */
 async function send() {
 

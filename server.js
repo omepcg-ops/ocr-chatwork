@@ -13,6 +13,42 @@ app.use(express.static("public"));
 const upload = multer({ storage: multer.memoryStorage() });
 
 /* =========================
+   🔥 口座番号抽出ロジック（ここが今回の本命）
+========================= */
+function extractAccountNumber(text) {
+  if (!text) return "不明";
+
+  const lines = text.split("\n");
+
+  const keywords = ["口座", "口座番号", "当座", "普通"];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (keywords.some(k => line.includes(k))) {
+
+      // 同じ行
+      let match = line.match(/\d{6,8}/);
+      if (match) return match[0];
+
+      // 次の行
+      if (lines[i + 1]) {
+        match = lines[i + 1].match(/\d{6,8}/);
+        if (match) return match[0];
+      }
+
+      // 前の行
+      if (lines[i - 1]) {
+        match = lines[i - 1].match(/\d{6,8}/);
+        if (match) return match[0];
+      }
+    }
+  }
+
+  return "不明";
+}
+
+/* =========================
    OCR
 ========================= */
 app.post("/ocr", upload.single("file"), async (req, res) => {
@@ -34,8 +70,8 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     const text =
       response.data.responses[0].fullTextAnnotation?.text || "";
 
-    const accountMatch = text.match(/\d{6,8}/);
-    const account = accountMatch ? accountMatch[0] : "不明";
+    // 🔥ここが変更ポイント
+    const account = extractAccountNumber(text);
 
     res.json({ text, account });
 

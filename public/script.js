@@ -144,7 +144,7 @@ function saveSettings() {
 }
 
 /* =========================
-   Chatwork送信
+   Chatwork送信（←ここ重要）
 ========================= */
 async function send() {
   const msg = document.getElementById("msg").value;
@@ -155,20 +155,33 @@ async function send() {
     return;
   }
 
-  let text = msg + "\n\n";
-
-  results.forEach(r => {
-    text += `口座番号: ${r.account}\n`;
-  });
+  if (!results.length) {
+    alert("画像がない");
+    return;
+  }
 
   try {
-    await fetch("/send", {
+    // 複数画像送信対応
+    for (let r of results) {
+      const formData = new FormData();
+
+      formData.append("file", r.file); // ←ここが超重要
+      formData.append("roomId", roomId);
+
+      await fetch("/send", {
+        method: "POST",
+        body: formData
+      });
+    }
+
+    // メッセージ送信（最後に1回）
+    await fetch("/sendMessage", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        message: text,
+        message: msg,
         roomId: roomId
       })
     });
@@ -191,10 +204,16 @@ window.onload = () => {
     settings = JSON.parse(saved);
     renderSettings();
   }
+
+  // デフォルトメッセージ
+  document.getElementById("msg").value =
+`お世話になっております。
+昨日到着分の振込は完了致しました。
+お手すきの際にご確認のほど宜しくお願いいたします。`;
 };
 
 /* =========================
-   HTMLから呼べるようにする（超重要）
+   HTMLから呼べるようにする
 ========================= */
 window.upload = upload;
 window.openSettings = openSettings;

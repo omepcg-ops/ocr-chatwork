@@ -2,23 +2,21 @@ const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
 const cors = require("cors");
+const FormData = require("form-data");
 
 const app = express();
+
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 app.use(express.static("public"));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 /* =========================
-   Google Vision OCR
+   OCR
 ========================= */
 app.post("/ocr", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "ファイルなし" });
-    }
-
     const base64 = req.file.buffer.toString("base64");
 
     const response = await axios.post(
@@ -34,109 +32,58 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     );
 
     const text =
-      response.data.responses[0]?.fullTextAnnotation?.text || "";
+      response.data.responses[0].fullTextAnnotation?.text || "";
 
-    console.log("OCR結果:", text);
+    const accountMatch = text.match(/\d{6,8}/);
+    const account = accountMatch ? accountMatch[0] : "不明";
 
-    const account = extractAccountNumber(text);
+    res.json({ text, account });
 
-    res.json({
-      text,
-      account
-    });
-
-  } catch (err) {
-    console.error(err.response?.data || err);
+  } catch (e) {
+    console.error(e.response?.data || e.message);
     res.status(500).json({ error: "OCR失敗" });
   }
 });
 
 /* =========================
-   口座番号抽出（超強化版）
-========================= */
-function extractAccountNumber(text) {
-  if (!text) return "未判定";
-
-  // 丸数字 → 通常数字
-  const circleMap = {
-    "①": "1","②": "2","③": "3","④": "4","⑤": "5",
-    "⑥": "6","⑦": "7","⑧": "8","⑨": "9","⑩": "10",
-    "⓪": "0"
-  };
-
-  let normalized = text;
-
-  Object.keys(circleMap).forEach(k => {
-    normalized = normalized.split(k).join(circleMap[k]);
-  });
-
-  // 全角→半角
-  normalized = normalized.replace(/[０-９]/g, s =>
-    String.fromCharCode(s.charCodeAt(0) - 65248)
-  );
-
-  // スペース削除（重要）
-  const noSpace = normalized.replace(/\s/g, "");
-
-  console.log("正規化:", noSpace);
-
-  // 「口座番号」周辺を最優先で取る
-  const keywordIndex = noSpace.indexOf("口座番号");
-
-  let best = null;
-
-  if (keywordIndex !== -1) {
-    const area = noSpace.slice(keywordIndex, keywordIndex + 50);
-
-    const match = area.match(/\d{6,10}/);
-    if (match) {
-      best = match[0];
-      console.log("キーワード一致:", best);
-      return best;
-    }
-  }
-
-  // fallback（全体から候補）
-  const candidates = noSpace.match(/\d{6,10}/g) || [];
-  console.log("候補:", candidates);
-
-  if (candidates.length === 0) return "未判定";
-
-  // 最も長い数字を採用
-  return candidates.sort((a, b) => b.length - a.length)[0];
-}
-
-/* =========================
-   Chatwork送信
+   ファイル送信（Chatwork）
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
-  const { message, roomId } = req.body;
-
   try {
-    // =========================
-    // ① ファイル送信
-    // =========================
+    const roomId = req.body.roomId;
+
     const form = new FormData();
     form.append("file", req.file.buffer, req.file.originalname);
-    form.append("message", "納品書");
 
     await axios.post(
       `https://api.chatwork.com/v2/rooms/${roomId}/files`,
       form,
       {
         headers: {
-          ...form.getHeaders(),
-          "X-ChatWorkToken": process.env.CHATWORK_TOKEN
+          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
+          ...form.getHeaders()
         }
       }
     );
 
-    // =========================
-    // ② メッセージ送信
-    // =========================
+    res.json({ success: true });
+
+  } catch (e) {
+    console.error(e.response?.data || e.message);
+    res.status(500).json({ error: "ファイル送信失敗" });
+  }
+});
+
+/* =========================
+   メッセージ送信
+========================= */
+app.post("/sendMessage", async (req, res) => {
+  try {
+    const { roomId, message } = req.body;
+
     await axios.post(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
-      `body=${encodeURIComponent(message)}`,
+      new URLSearchParams({ body: message }),
       {
         headers: {
           "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
@@ -148,8 +95,8 @@ app.post("/send", upload.single("file"), async (req, res) => {
     res.json({ success: true });
 
   } catch (e) {
-    console.error(e.response?.data || e);
-    res.status(500).json({ error: "送信失敗" });
+    console.error(e.response?.data || e.message);
+    res.status(500).json({ error: "メッセージ送信失敗" });
   }
 });
 

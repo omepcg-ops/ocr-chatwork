@@ -30,19 +30,19 @@ async function upload() {
 
       const data = await res.json();
 
+      // 🔥ここで会社名に変換
+      const match = settings.find(s => s.account === data.account);
+
       results.push({
         file,
         text: data.text || "取得失敗",
-        account: data.account || "不明"
+        account: data.account || "不明",
+        name: match ? match.name : "未登録",
+        roomId: match ? match.roomId : ""
       });
 
     } catch (err) {
       console.error(err);
-      results.push({
-        file,
-        text: "エラー",
-        account: "取得失敗"
-      });
     }
   }
 
@@ -62,6 +62,7 @@ function render() {
     div.innerHTML = `
       <div style="padding:10px;border:1px solid #ccc;margin-bottom:10px;">
         <b>${r.file.name}</b><br>
+        会社名: <span style="color:blue">${r.name}</span><br>
         口座番号: <span style="color:green">${r.account}</span><br><br>
         <button onclick="show(${i})">表示</button>
         <button onclick="removeItem(${i})">削除</button>
@@ -101,22 +102,24 @@ function closeSend() {
 }
 
 /* =========================
-   設定管理
+   設定管理（🔥修正ポイント）
 ========================= */
 function addSetting() {
   const account = document.getElementById("account").value;
   const name = document.getElementById("name").value;
+  const roomId = document.getElementById("room").value;
 
-  if (!account || !name) {
-    alert("入力して");
+  if (!account || !name || !roomId) {
+    alert("全部入力して");
     return;
   }
 
-  settings.push({ account, name });
+  settings.push({ account, name, roomId });
   renderSettings();
 
   document.getElementById("account").value = "";
   document.getElementById("name").value = "";
+  document.getElementById("room").value = "";
 }
 
 function renderSettings() {
@@ -126,7 +129,7 @@ function renderSettings() {
   settings.forEach((s, i) => {
     const div = document.createElement("div");
     div.innerHTML = `
-      ${s.name} : ${s.account}
+      ${s.name} : ${s.account} (room:${s.roomId})
       <button onclick="deleteSetting(${i})">削除</button>
     `;
     box.appendChild(div);
@@ -144,47 +147,45 @@ function saveSettings() {
 }
 
 /* =========================
-   Chatwork送信（←ここ重要）
+   Chatwork送信（🔥ここも修正）
 ========================= */
 async function send() {
-  const msg = document.getElementById("msg").value;
-  const roomId = document.getElementById("room").value;
-
-  if (!roomId) {
-    alert("ルームID入れて");
-    return;
-  }
 
   if (!results.length) {
-    alert("画像がない");
+    alert("データなし");
     return;
   }
 
   try {
-    // 複数画像送信対応
     for (let r of results) {
-      const formData = new FormData();
 
-      formData.append("file", r.file); // ←ここが超重要
-      formData.append("roomId", roomId);
+      if (!r.roomId) {
+        alert(`${r.name} のルームIDが未設定`);
+        return;
+      }
+
+      // ①画像送信
+      const formData = new FormData();
+      formData.append("file", r.file);
+      formData.append("roomId", r.roomId);
 
       await fetch("/send", {
         method: "POST",
         body: formData
       });
-    }
 
-    // メッセージ送信（最後に1回）
-    await fetch("/sendMessage", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        message: msg,
-        roomId: roomId
-      })
-    });
+      // ②メッセージ送信
+      await fetch("/sendMessage", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          roomId: r.roomId,
+          message: document.getElementById("msg").value
+        })
+      });
+    }
 
     alert("送信完了");
     closeSend();
@@ -205,7 +206,6 @@ window.onload = () => {
     renderSettings();
   }
 
-  // デフォルトメッセージ
   document.getElementById("msg").value =
 `お世話になっております。
 昨日到着分の振込は完了致しました。
@@ -213,7 +213,7 @@ window.onload = () => {
 };
 
 /* =========================
-   HTMLから呼べるようにする
+   HTML連携
 ========================= */
 window.upload = upload;
 window.openSettings = openSettings;

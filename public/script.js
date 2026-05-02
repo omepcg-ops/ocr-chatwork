@@ -161,7 +161,7 @@ window.onload = async () => {
 };
 
 /* =========================
-   グローバル公開（ブラウザ限定）
+   グローバル公開（超重要）
 ========================= */
 if (typeof window !== "undefined") {
   window.upload = upload;

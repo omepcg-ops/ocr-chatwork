@@ -1,94 +1,68 @@
-let results = [];
+/* =========================
+   モーダル制御
+========================= */
+function openSettings() {
+  document.getElementById("settings").style.display = "block";
+}
 
-async function upload() {
-  const files = document.getElementById("files").files;
+function closeSettings() {
+  document.getElementById("settings").style.display = "none";
+}
 
-  if (!files.length) {
-    alert("ファイル選択して");
+function openSend() {
+  document.getElementById("sendBox").style.display = "block";
+}
+
+function closeSend() {
+  document.getElementById("sendBox").style.display = "none";
+}
+
+
+/* =========================
+   設定管理（簡易）
+========================= */
+let settings = [];
+
+function addSetting() {
+  const account = document.getElementById("account").value;
+  const name = document.getElementById("name").value;
+
+  if (!account || !name) {
+    alert("入力して");
     return;
   }
 
-  results = [];
-  document.getElementById("list").innerHTML = "読み取り中...";
+  settings.push({ account, name });
+  renderSettings();
 
-  for (let file of files) {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("/ocr", {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-
-      results.push({
-        file,
-        text: data.text,
-        account: data.account
-      });
-
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  render();
+  document.getElementById("account").value = "";
+  document.getElementById("name").value = "";
 }
 
-function render() {
-  const list = document.getElementById("list");
-  list.innerHTML = "";
+function renderSettings() {
+  const box = document.getElementById("settingsList");
+  box.innerHTML = "";
 
-  results.forEach((r, i) => {
+  settings.forEach(s => {
     const div = document.createElement("div");
-
-    div.innerHTML = `
-      <div style="padding:10px;border:1px solid #ccc;margin-bottom:10px;">
-        <b>${r.file.name}</b><br>
-        口座番号: <span style="color:green">${r.account}</span><br><br>
-        <button onclick="show(${i})">表示</button>
-        <button onclick="removeItem(${i})">削除</button>
-      </div>
-    `;
-
-    list.appendChild(div);
+    div.innerText = `${s.name} : ${s.account}`;
+    box.appendChild(div);
   });
 }
 
-function show(i) {
-  alert(results[i].text);
+function saveSettings() {
+  localStorage.setItem("settings", JSON.stringify(settings));
+  alert("保存した");
 }
 
-function removeItem(i) {
-  results.splice(i, 1);
-  render();
-}
 
 /* =========================
-   Chatwork送信
+   初期ロード
 ========================= */
-async function send() {
-  const msg = document.getElementById("msg").value;
-  const roomId = document.getElementById("room").value;
-
-  let text = msg + "\n\n";
-
-  results.forEach(r => {
-    text += `口座番号: ${r.account}\n`;
-  });
-
-  await fetch("/send", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      message: text,
-      roomId: roomId
-    })
-  });
-
-  alert("送信完了");
-}
+window.onload = () => {
+  const saved = localStorage.getItem("settings");
+  if (saved) {
+    settings = JSON.parse(saved);
+    renderSettings();
+  }
+};

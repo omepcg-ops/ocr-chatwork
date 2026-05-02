@@ -164,17 +164,7 @@ async function send() {
         return;
       }
 
-      // ①画像送信
-      const formData = new FormData();
-      formData.append("file", r.file);
-      formData.append("roomId", r.roomId);
-
-      await fetch("/send", {
-        method: "POST",
-        body: formData
-      });
-
-      // ②メッセージ送信
+      // 🔥 ①メッセージ先に送る
       await fetch("/sendMessage", {
         method: "POST",
         headers: {
@@ -184,6 +174,16 @@ async function send() {
           roomId: r.roomId,
           message: document.getElementById("msg").value
         })
+      });
+
+      // 🔥 ②画像を後に送る（これが上に表示される）
+      const formData = new FormData();
+      formData.append("file", r.file);
+      formData.append("roomId", r.roomId);
+
+      await fetch("/send", {
+        method: "POST",
+        body: formData
       });
     }
 

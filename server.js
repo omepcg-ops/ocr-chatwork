@@ -1,145 +1,156 @@
 const express = require("express");
 const multer = require("multer");
-const axios = require("axios");
-const cors = require("cors");
-const FormData = require("form-data");
+const fs = require("fs");
+const fetch = require("node-fetch");
 
 const app = express();
+const upload = multer({ dest: "uploads/" });
 
-app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-const upload = multer({ storage: multer.memoryStorage() });
+const SETTINGS_FILE = "settings.json";
 
 /* =========================
-   🔥 口座番号抽出ロジック（ここが今回の本命）
-========================= */
-function extractAccountNumber(text) {
-  if (!text) return "不明";
-
-  const lines = text.split("\n");
-
-  const keywords = ["口座", "口座番号", "当座", "普通"];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (keywords.some(k => line.includes(k))) {
-
-      // 同じ行
-      let match = line.match(/\d{6,8}/);
-      if (match) return match[0];
-
-      // 次の行
-      if (lines[i + 1]) {
-        match = lines[i + 1].match(/\d{6,8}/);
-        if (match) return match[0];
-      }
-
-      // 前の行
-      if (lines[i - 1]) {
-        match = lines[i - 1].match(/\d{6,8}/);
-        if (match) return match[0];
-      }
-    }
-  }
-
-  return "不明";
-}
-
-/* =========================
-   OCR
+   OCR（Google Vision）
 ========================= */
 app.post("/ocr", upload.single("file"), async (req, res) => {
   try {
-    const base64 = req.file.buffer.toString("base64");
+    const image = fs.readFileSync(req.file.path);
 
-    const response = await axios.post(
+    const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`,
       {
-        requests: [
-          {
-            image: { content: base64 },
-            features: [{ type: "TEXT_DETECTION" }]
-          }
-        ]
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [
+            {
+              image: { content: image.toString("base64") },
+              features: [{ type: "TEXT_DETECTION" }]
+            }
+          ]
+        })
       }
     );
 
-    const text =
-      response.data.responses[0].fullTextAnnotation?.text || "";
+    const data = await response.json();
 
-    // 🔥ここが変更ポイント
-    const account = extractAccountNumber(text);
+    const text =
+      data.responses?.[0]?.fullTextAnnotation?.text || "";
+
+    /* =========================
+       口座番号抽出（改良版）
+    ========================= */
+    const lines = text.split("\n");
+
+    let account = "不明";
+
+    for (let i = 0; i < lines.length; i++) {
+      if (/口座|当座|普通/.test(lines[i])) {
+
+        for (let j = i; j < i + 3; j++) {
+          if (!lines[j]) continue;
+
+          const match = lines[j].match(/\d{6,8}/);
+          if (match) {
+            account = match[0];
+            break;
+          }
+        }
+      }
+    }
+
+    fs.unlinkSync(req.file.path);
 
     res.json({ text, account });
 
   } catch (e) {
-    console.error(e.response?.data || e.message);
+    console.error(e);
     res.status(500).json({ error: "OCR失敗" });
   }
 });
 
 /* =========================
-   ファイル送信（Chatwork）
+   設定取得
+========================= */
+app.get("/settings", (req, res) => {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+      return res.json([]);
+    }
+
+    const data = fs.readFileSync(SETTINGS_FILE);
+    res.json(JSON.parse(data));
+
+  } catch {
+    res.json([]);
+  }
+});
+
+/* =========================
+   設定保存
+========================= */
+app.post("/settings", (req, res) => {
+  try {
+    fs.writeFileSync(
+      SETTINGS_FILE,
+      JSON.stringify(req.body, null, 2)
+    );
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "保存失敗" });
+  }
+});
+
+/* =========================
+   Chatwork送信（画像 + メッセージ）
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
   try {
-    const roomId = req.body.roomId;
+    const { message, roomId } = req.body;
 
-    const form = new FormData();
-    form.append("file", req.file.buffer, req.file.originalname);
+    // ① 画像送信
+    if (req.file) {
+      const formData = new FormData();
+      formData.append("file", fs.createReadStream(req.file.path));
 
-    await axios.post(
-      `https://api.chatwork.com/v2/rooms/${roomId}/files`,
-      form,
-      {
-        headers: {
-          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
-          ...form.getHeaders()
+      await fetch(
+        `https://api.chatwork.com/v2/rooms/${roomId}/files`,
+        {
+          method: "POST",
+          headers: {
+            "X-ChatWorkToken": process.env.CHATWORK_TOKEN
+          },
+          body: formData
         }
-      }
-    );
+      );
 
-    res.json({ success: true });
+      fs.unlinkSync(req.file.path);
+    }
 
-  } catch (e) {
-    console.error(e.response?.data || e.message);
-    res.status(500).json({ error: "ファイル送信失敗" });
-  }
-});
+    // ② 少し待つ（順番対策）
+    await new Promise(r => setTimeout(r, 1000));
 
-/* =========================
-   メッセージ送信
-========================= */
-app.post("/sendMessage", async (req, res) => {
-  try {
-    const { roomId, message } = req.body;
-
-    await axios.post(
+    // ③ メッセージ送信
+    await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
-      new URLSearchParams({ body: message }),
       {
+        method: "POST",
         headers: {
           "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
           "Content-Type": "application/x-www-form-urlencoded"
-        }
+        },
+        body: new URLSearchParams({ body: message })
       }
     );
 
     res.json({ success: true });
 
   } catch (e) {
-    console.error(e.response?.data || e.message);
-    res.status(500).json({ error: "メッセージ送信失敗" });
+    console.error(e);
+    res.status(500).json({ error: "送信失敗" });
   }
 });
 
-/* =========================
-   起動
-========================= */
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log("Server started:", PORT);
-});
+app.listen(10000, () => console.log("Server started"));

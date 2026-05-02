@@ -146,5 +146,11 @@ window.upload = upload;
 window.send = send;
 window.show = show;
 window.removeItem = removeItem;
+
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.openSend = openSend;
+window.closeSend = closeSend;
+
 window.addSetting = addSetting;
 window.saveSettings = saveSettings;

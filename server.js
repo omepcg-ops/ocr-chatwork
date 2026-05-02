@@ -109,17 +109,34 @@ function extractAccountNumber(text) {
 /* =========================
    Chatwork送信
 ========================= */
-app.post("/send", async (req, res) => {
-  try {
-    const { message, roomId } = req.body;
+app.post("/send", upload.single("file"), async (req, res) => {
+  const { message, roomId } = req.body;
 
-    if (!message || !roomId) {
-      return res.status(400).json({ error: "不足" });
-    }
+  try {
+    // =========================
+    // ① ファイル送信
+    // =========================
+    const form = new FormData();
+    form.append("file", req.file.buffer, req.file.originalname);
+    form.append("message", "納品書");
 
     await axios.post(
+      `https://api.chatwork.com/v2/rooms/${roomId}/files`,
+      form,
+      {
+        headers: {
+          ...form.getHeaders(),
+          "X-ChatWorkToken": process.env.CHATWORK_TOKEN
+        }
+      }
+    );
+
+    // =========================
+    // ② メッセージ送信
+    // =========================
+    await axios.post(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
-      new URLSearchParams({ body: message }),
+      `body=${encodeURIComponent(message)}`,
       {
         headers: {
           "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
@@ -130,8 +147,8 @@ app.post("/send", async (req, res) => {
 
     res.json({ success: true });
 
-  } catch (err) {
-    console.error(err.response?.data || err);
+  } catch (e) {
+    console.error(e.response?.data || e);
     res.status(500).json({ error: "送信失敗" });
   }
 });

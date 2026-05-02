@@ -160,16 +160,20 @@ window.onload = async () => {
   renderSettings();
 };
 
-/* グローバル公開 */
-window.upload = upload;
-window.send = send;
-window.show = show;
-window.removeItem = removeItem;
+/* =========================
+   グローバル公開（ブラウザ限定）
+========================= */
+if (typeof window !== "undefined") {
+  window.upload = upload;
+  window.send = send;
+  window.show = show;
+  window.removeItem = removeItem;
 
-window.openSettings = openSettings;
-window.closeSettings = closeSettings;
-window.openSend = openSend;
-window.closeSend = closeSend;
+  window.openSettings = openSettings;
+  window.closeSettings = closeSettings;
+  window.openSend = openSend;
+  window.closeSend = closeSend;
 
-window.addSetting = addSetting;
-window.saveSettings = saveSettings;
+  window.addSetting = addSetting;
+  window.saveSettings = saveSettings;
+}

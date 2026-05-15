@@ -1,6 +1,11 @@
 let results = [];
 let settings = [];
 
+/* デフォルトメッセージ */
+const DEFAULT_MESSAGE = `お世話になっております。
+昨日到着分の振込は完了致しました。
+お手すきの際にご確認のほど宜しくお願いいたします。`;
+
 /* OCR */
 async function upload() {
   const files = document.getElementById("files").files;
@@ -41,11 +46,13 @@ function render() {
     const div = document.createElement("div");
 
     div.innerHTML = `
-      <b>${r.file.name}</b><br>
-      会社名: <span style="color:blue">${r.name}</span><br>
-      口座番号: <span style="color:green">${r.account}</span><br><br>
-      <button onclick="show(${i})">表示</button>
-      <button onclick="removeItem(${i})">削除</button>
+      <div class="card">
+        <b>${r.file.name}</b><br>
+        会社名: <span style="color:blue">${r.name}</span><br>
+        口座番号: <span style="color:green">${r.account}</span><br><br>
+        <button onclick="show(${i})">表示</button>
+        <button onclick="removeItem(${i})">削除</button>
+      </div>
     `;
 
     list.appendChild(div);
@@ -61,9 +68,7 @@ function removeItem(i) {
   render();
 }
 
-/* =========================
-   モーダル制御（これ抜けてる）
-========================= */
+/* モーダル */
 function openSettings() {
   document.getElementById("settings").style.display = "block";
 }
@@ -74,6 +79,9 @@ function closeSettings() {
 
 function openSend() {
   document.getElementById("sendBox").style.display = "block";
+
+  // ← ここ重要：デフォルトセット
+  document.getElementById("msg").value = DEFAULT_MESSAGE;
 }
 
 function closeSend() {
@@ -82,6 +90,8 @@ function closeSend() {
 
 /* 送信 */
 async function send() {
+
+  const msg = document.getElementById("msg").value;
 
   for (let r of results) {
 
@@ -93,11 +103,7 @@ async function send() {
     const formData = new FormData();
     formData.append("file", r.file);
     formData.append("roomId", r.roomId);
-    formData.append("message",
-`お世話になっております。
-昨日到着分の振込は完了致しました。
-お手すきの際にご確認のほど宜しくお願いいたします。`
-    );
+    formData.append("message", msg); // ← ここ修正
 
     await fetch("/send", {
       method: "POST",
@@ -111,6 +117,7 @@ async function send() {
   results = [];
   document.getElementById("list").innerHTML = "";
   document.getElementById("files").value = "";
+  closeSend();
 }
 
 /* 設定 */
@@ -160,9 +167,7 @@ window.onload = async () => {
   renderSettings();
 };
 
-/* =========================
-   グローバル公開（絶対これ）
-========================= */
+/* グローバル */
 window.upload = upload;
 window.send = send;
 window.show = show;

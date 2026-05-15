@@ -3,6 +3,7 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const fetch = require("node-fetch");
+const sharp = require("sharp");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -40,16 +41,14 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     const text =
       data.responses?.[0]?.fullTextAnnotation?.text || "";
 
+    /* 口座番号抽出 */
     const lines = text.split("\n");
-
     let account = "不明";
 
     for (let i = 0; i < lines.length; i++) {
       if (/口座|当座|普通/.test(lines[i])) {
-
         for (let j = i; j < i + 3; j++) {
           if (!lines[j]) continue;
-
           const match = lines[j].match(/\d{6,8}/);
           if (match) {
             account = match[0];
@@ -74,13 +73,9 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
 ========================= */
 app.get("/settings", (req, res) => {
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      return res.json([]);
-    }
-
+    if (!fs.existsSync(SETTINGS_FILE)) return res.json([]);
     const data = fs.readFileSync(SETTINGS_FILE);
     res.json(JSON.parse(data));
-
   } catch {
     res.json([]);
   }
@@ -102,20 +97,38 @@ app.post("/settings", (req, res) => {
 });
 
 /* =========================
-   Chatwork送信（画像 → メッセージ）
+   Chatwork送信
+   画像 → メッセージ
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
   try {
     const { message, roomId } = req.body;
 
     /* =========================
-       ① 画像送信（←ここが重要）
+       ① JPEG変換して画像送信
     ========================= */
     if (req.file) {
+
+      const jpgPath = req.file.path + ".jpg";
+
+      // ★ 全てJPEG化
+      await sharp(req.file.path)
+        .jpeg({ quality: 90 })
+        .toFile(jpgPath);
+
       const formData = new FormData();
 
-      formData.append("file", fs.createReadStream(req.file.path));
-      formData.append("message", "納品書です"); // ←必須
+      formData.append(
+        "file",
+        fs.createReadStream(jpgPath),
+        {
+          filename: req.file.originalname.replace(/\.[^/.]+$/, "") + ".jpg",
+          contentType: "image/jpeg"
+        }
+      );
+
+      // ★ Chatworkはmessage必須
+      formData.append("message", "");
 
       const fileRes = await fetch(
         `https://api.chatwork.com/v2/rooms/${roomId}/files`,
@@ -129,16 +142,18 @@ app.post("/send", upload.single("file"), async (req, res) => {
         }
       );
 
-      const fileText = await fileRes.text();
-      console.log("file upload result:", fileText);
+      const fileResult = await fileRes.text();
+      console.log("画像送信結果:", fileResult);
 
+      // 削除
       fs.unlinkSync(req.file.path);
+      fs.unlinkSync(jpgPath);
     }
 
     /* =========================
-       ② 少し待つ（順番対策）
+       ② 少し待つ（順番制御）
     ========================= */
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1200));
 
     /* =========================
        ③ メッセージ送信
@@ -155,8 +170,8 @@ app.post("/send", upload.single("file"), async (req, res) => {
       }
     );
 
-    const msgText = await msgRes.text();
-    console.log("message result:", msgText);
+    const msgResult = await msgRes.text();
+    console.log("メッセージ送信結果:", msgResult);
 
     res.json({ success: true });
 
@@ -166,4 +181,5 @@ app.post("/send", upload.single("file"), async (req, res) => {
   }
 });
 
+/* ========================= */
 app.listen(10000, () => console.log("Server started"));

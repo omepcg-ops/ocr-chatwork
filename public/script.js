@@ -1,15 +1,9 @@
 let results = [];
 let settings = [];
 
-/* デフォルトメッセージ */
-const DEFAULT_MESSAGE = `お世話になっております。
-昨日到着分の振込は完了致しました。
-お手すきの際にご確認のほど宜しくお願いいたします。`;
-
 /* OCR */
 async function upload() {
   const files = document.getElementById("files").files;
-
   results = [];
 
   for (let file of files) {
@@ -22,7 +16,6 @@ async function upload() {
     });
 
     const data = await res.json();
-
     const match = settings.find(s => s.account === data.account);
 
     results.push({
@@ -37,87 +30,143 @@ async function upload() {
   render();
 }
 
-/* 表示 */
+/* 表示（枚数まとめ） */
 function render() {
   const list = document.getElementById("list");
   list.innerHTML = "";
 
-  results.forEach((r, i) => {
+  const grouped = {};
+
+  results.forEach(r => {
+    if (!grouped[r.account]) {
+      grouped[r.account] = {
+        name: r.name,
+        account: r.account,
+        roomId: r.roomId,
+        files: []
+      };
+    }
+    grouped[r.account].files.push(r.file);
+  });
+
+  Object.values(grouped).forEach((g, i) => {
     const div = document.createElement("div");
+    div.className = "card";
 
     div.innerHTML = `
-      <div class="card">
-        <b>${r.file.name}</b><br>
-        会社名: <span style="color:blue">${r.name}</span><br>
-        口座番号: <span style="color:green">${r.account}</span><br><br>
-        <button onclick="show(${i})">表示</button>
-        <button onclick="removeItem(${i})">削除</button>
-      </div>
+      <div class="title">${g.name}</div>
+      <div>口座番号: <span class="ok">${g.account}</span></div>
+      <div>枚数: ${g.files.length}枚</div>
     `;
 
     list.appendChild(div);
   });
 }
 
-function show(i) {
-  alert(results[i].text);
-}
-
-function removeItem(i) {
-  results.splice(i, 1);
-  render();
-}
-
 /* モーダル */
 function openSettings() {
   document.getElementById("settings").style.display = "block";
 }
-
 function closeSettings() {
   document.getElementById("settings").style.display = "none";
 }
-
 function openSend() {
   document.getElementById("sendBox").style.display = "block";
 
-  // ← ここ重要：デフォルトセット
-  document.getElementById("msg").value = DEFAULT_MESSAGE;
+  // デフォルト文章入れる
+  document.getElementById("msg").value =
+`お世話になっております。
+昨日到着分の振込は完了致しました。
+お手すきの際にご確認のほど宜しくお願いいたします。`;
 }
-
 function closeSend() {
   document.getElementById("sendBox").style.display = "none";
 }
 
-/* 送信 */
+/* =========================
+   送信（グループ送信）
+========================= */
 async function send() {
 
   const msg = document.getElementById("msg").value;
 
-  for (let r of results) {
+  // 🔥 ローディング表示
+  showLoading(true);
 
-    if (!r.roomId) {
-      alert("ルームID未設定");
+  const grouped = {};
+
+  results.forEach(r => {
+    if (!grouped[r.roomId]) {
+      grouped[r.roomId] = [];
+    }
+    grouped[r.roomId].push(r);
+  });
+
+  for (let roomId in grouped) {
+
+    const items = grouped[roomId];
+
+    if (!roomId) {
+      alert("ルームID未設定あり");
+      showLoading(false);
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", r.file);
-    formData.append("roomId", r.roomId);
-    formData.append("message", msg); // ← ここ修正
+    // ① 画像を全部送る
+    for (let r of items) {
+      const formData = new FormData();
+      formData.append("file", r.file);
+      formData.append("roomId", roomId);
+      formData.append("message", msg);
 
-    await fetch("/send", {
+      await fetch("/send", {
+        method: "POST",
+        body: formData
+      });
+    }
+
+    // ② 待機（順序安定）
+    await new Promise(r => setTimeout(r, 3000));
+
+    // ③ メッセージ1回
+    await fetch("/sendMessageOnly", {
       method: "POST",
-      body: formData
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        roomId,
+        message: msg
+      })
     });
   }
 
+  showLoading(false);
+
   alert("送信完了");
 
-  // 初期化
   results = [];
   document.getElementById("list").innerHTML = "";
   document.getElementById("files").value = "";
-  closeSend();
+}
+
+/* =========================
+   ローディングUI
+========================= */
+function showLoading(flag) {
+  let el = document.getElementById("loading");
+
+  if (flag) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "loading";
+      el.innerHTML = "送信中...";
+      document.body.appendChild(el);
+    }
+    el.style.display = "flex";
+  } else {
+    if (el) el.style.display = "none";
+  }
 }
 
 /* 設定 */
@@ -170,13 +219,9 @@ window.onload = async () => {
 /* グローバル */
 window.upload = upload;
 window.send = send;
-window.show = show;
-window.removeItem = removeItem;
-
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.openSend = openSend;
 window.closeSend = closeSend;
-
 window.addSetting = addSetting;
 window.saveSettings = saveSettings;

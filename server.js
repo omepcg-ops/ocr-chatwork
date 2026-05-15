@@ -40,9 +40,6 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     const text =
       data.responses?.[0]?.fullTextAnnotation?.text || "";
 
-    /* =========================
-       口座番号抽出（改良版）
-    ========================= */
     const lines = text.split("\n");
 
     let account = "不明";
@@ -105,36 +102,48 @@ app.post("/settings", (req, res) => {
 });
 
 /* =========================
-   Chatwork送信（画像 + メッセージ）
+   Chatwork送信（画像 → メッセージ）
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
   try {
     const { message, roomId } = req.body;
 
-    // ① 画像送信
+    /* =========================
+       ① 画像送信（←ここが重要）
+    ========================= */
     if (req.file) {
       const formData = new FormData();
-      formData.append("file", fs.createReadStream(req.file.path));
 
-      await fetch(
+      formData.append("file", fs.createReadStream(req.file.path));
+      formData.append("message", "納品書です"); // ←必須
+
+      const fileRes = await fetch(
         `https://api.chatwork.com/v2/rooms/${roomId}/files`,
         {
           method: "POST",
           headers: {
-            "X-ChatWorkToken": process.env.CHATWORK_TOKEN
+            "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
+            ...formData.getHeaders()
           },
           body: formData
         }
       );
 
+      const fileText = await fileRes.text();
+      console.log("file upload result:", fileText);
+
       fs.unlinkSync(req.file.path);
     }
 
-    // ② 少し待つ（順番対策）
+    /* =========================
+       ② 少し待つ（順番対策）
+    ========================= */
     await new Promise(r => setTimeout(r, 1000));
 
-    // ③ メッセージ送信
-    await fetch(
+    /* =========================
+       ③ メッセージ送信
+    ========================= */
+    const msgRes = await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
       {
         method: "POST",
@@ -146,10 +155,13 @@ app.post("/send", upload.single("file"), async (req, res) => {
       }
     );
 
+    const msgText = await msgRes.text();
+    console.log("message result:", msgText);
+
     res.json({ success: true });
 
   } catch (e) {
-    console.error(e);
+    console.error("送信エラー:", e);
     res.status(500).json({ error: "送信失敗" });
   }
 });

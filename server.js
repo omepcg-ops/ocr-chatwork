@@ -71,20 +71,19 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
 });
 
 /* =========================
-   Chatwork送信（画像表示確定版）
+   画像送信専用（ここ重要）
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
   try {
-    const { message, roomId } = req.body;
+    const { roomId } = req.body;
 
     const jpgPath = req.file.path + ".jpg";
 
-    // 🔥 必ずJPG変換
+    // JPG変換
     await sharp(req.file.path)
       .jpeg({ quality: 90 })
       .toFile(jpgPath);
 
-    /* ===== 画像送信（ここが重要） ===== */
     const formData = new FormData();
 
     formData.append("file", fs.createReadStream(jpgPath), {
@@ -104,22 +103,6 @@ app.post("/send", upload.single("file"), async (req, res) => {
       }
     );
 
-    /* ===== 順番制御 ===== */
-    await new Promise(r => setTimeout(r, 4000));
-
-    /* ===== メッセージ ===== */
-    await fetch(
-      `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({ body: message })
-      }
-    );
-
     fs.unlinkSync(req.file.path);
     fs.unlinkSync(jpgPath);
 
@@ -131,6 +114,9 @@ app.post("/send", upload.single("file"), async (req, res) => {
   }
 });
 
+/* =========================
+   メッセージ送信専用
+========================= */
 app.post("/sendMessageOnly", async (req, res) => {
   try {
     const { message, roomId } = req.body;

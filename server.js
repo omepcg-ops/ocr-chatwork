@@ -131,4 +131,28 @@ app.post("/send", upload.single("file"), async (req, res) => {
   }
 });
 
+app.post("/sendMessageOnly", async (req, res) => {
+  try {
+    const { message, roomId } = req.body;
+
+    await fetch(
+      `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({ body: message })
+      }
+    );
+
+    res.json({ success: true });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "送信失敗" });
+  }
+});
+
 app.listen(10000, () => console.log("Server started"));

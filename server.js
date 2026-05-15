@@ -13,20 +13,26 @@ app.use(express.static("public"));
 
 const SETTINGS_FILE = "settings.json";
 
-/* =========================
-   OCR（HEIC対応版）
-========================= */
+/* OCR */
 app.post("/ocr", upload.single("file"), async (req, res) => {
   try {
-    const originalPath = req.file.path;
-    const convertedPath = originalPath + ".jpg";
+    const ext = req.file.originalname.toLowerCase();
 
-    // HEIC → JPG変換（全部通す）
-    await sharp(originalPath)
+    let imageBuffer;
+
+    // HEICは変換しない（回避）
+    if (ext.endsWith(".heic")) {
+      console.log("HEICスキップ");
+      return res.json({ text: "", account: "不明" });
+    }
+
+    const convertedPath = req.file.path + ".jpg";
+
+    await sharp(req.file.path)
       .jpeg({ quality: 90 })
       .toFile(convertedPath);
 
-    const image = fs.readFileSync(convertedPath);
+    imageBuffer = fs.readFileSync(convertedPath);
 
     const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`,
@@ -36,7 +42,7 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
         body: JSON.stringify({
           requests: [
             {
-              image: { content: image.toString("base64") },
+              image: { content: imageBuffer.toString("base64") },
               features: [{ type: "TEXT_DETECTION" }]
             }
           ]
@@ -45,14 +51,10 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     );
 
     const data = await response.json();
-
-    const text =
-      data.responses?.[0]?.fullTextAnnotation?.text || "";
-
-    /* 口座番号抽出 */
-    const lines = text.split("\n");
+    const text = data.responses?.[0]?.fullTextAnnotation?.text || "";
 
     let account = "不明";
+    const lines = text.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
       if (/口座|当座|普通/.test(lines[i])) {
@@ -67,7 +69,7 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
       }
     }
 
-    fs.unlinkSync(originalPath);
+    fs.unlinkSync(req.file.path);
     fs.unlinkSync(convertedPath);
 
     res.json({ text, account });
@@ -78,77 +80,33 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
   }
 });
 
-/* =========================
-   設定取得
-========================= */
-app.get("/settings", (req, res) => {
-  try {
-    if (!fs.existsSync(SETTINGS_FILE)) {
-      return res.json([]);
-    }
-    const data = fs.readFileSync(SETTINGS_FILE);
-    res.json(JSON.parse(data));
-  } catch {
-    res.json([]);
-  }
-});
-
-/* =========================
-   設定保存
-========================= */
-app.post("/settings", (req, res) => {
-  try {
-    fs.writeFileSync(
-      SETTINGS_FILE,
-      JSON.stringify(req.body, null, 2)
-    );
-    res.json({ success: true });
-  } catch {
-    res.status(500).json({ error: "保存失敗" });
-  }
-});
-
-/* =========================
-   Chatwork送信（完全版）
-========================= */
+/* Chatwork送信 */
 app.post("/send", upload.single("file"), async (req, res) => {
   try {
     const { message, roomId } = req.body;
 
-    const originalPath = req.file.path;
-    const convertedPath = originalPath + ".jpg";
+    const filePath = req.file.path;
 
-    // 全部JPGに変換
-    await sharp(originalPath)
-      .jpeg({ quality: 90 })
-      .toFile(convertedPath);
-
-    /* ========= ① 画像送信 ========= */
     const formData = new FormData();
-    formData.append("file", fs.createReadStream(convertedPath), {
-      filename: "image.jpg",
-      contentType: "image/jpeg"
-    });
+    formData.append("file", fs.createReadStream(filePath));
+    formData.append("message", "納品書です");
 
-    const fileRes = await fetch(
+    await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/files`,
       {
         method: "POST",
         headers: {
-          "X-ChatWorkToken": process.env.CHATWORK_TOKEN
+          "X-ChatWorkToken": process.env.CHATWORK_TOKEN,
+          ...formData.getHeaders()
         },
         body: formData
       }
     );
 
-    const fileText = await fileRes.text();
-    console.log("FILE:", fileText);
+    // 待機（長め）
+    await new Promise(r => setTimeout(r, 4000));
 
-    /* ========= ② 3秒待機 ========= */
-    await new Promise(r => setTimeout(r, 3000));
-
-    /* ========= ③ メッセージ送信 ========= */
-    const msgRes = await fetch(
+    await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
       {
         method: "POST",
@@ -160,11 +118,7 @@ app.post("/send", upload.single("file"), async (req, res) => {
       }
     );
 
-    const msgText = await msgRes.text();
-    console.log("MSG:", msgText);
-
-    fs.unlinkSync(originalPath);
-    fs.unlinkSync(convertedPath);
+    fs.unlinkSync(filePath);
 
     res.json({ success: true });
 

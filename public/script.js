@@ -54,7 +54,6 @@ async function upload() {
 
 }
 
-/* 表示 */
 function render() {
 
   const list =
@@ -119,11 +118,22 @@ function render() {
 
           </div>
 
+        </div>
+
+        <div class="card-actions">
+
           <button
             class="preview-btn"
             onclick='previewImages(${JSON.stringify(group.items.map(i => URL.createObjectURL(i.file)))})'
           >
             表示
+          </button>
+
+          <button
+            class="delete-btn"
+            onclick='deleteGroup("${group.account}")'
+          >
+            削除
           </button>
 
         </div>

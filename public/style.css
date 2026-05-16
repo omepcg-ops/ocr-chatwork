@@ -402,3 +402,38 @@ textarea {
   text-overflow: ellipsis;
 
 }
+.card-actions {
+
+  display: flex;
+  gap: 12px;
+
+  margin-top: 18px;
+
+}
+
+.card-actions button {
+
+  flex: 1;
+
+}
+
+.delete-btn {
+
+  background: #ef4444;
+  color: white;
+
+  border-radius: 14px;
+
+}
+
+.delete-btn:active {
+
+  transform: scale(0.98);
+
+}
+
+.unknown-card {
+
+  border: 2px solid #ef4444;
+
+}

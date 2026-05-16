@@ -27,7 +27,6 @@ async function upload() {
     const data =
       await res.json();
 
-    /* 型違い対策 */
     const match =
       settings.find(
         s =>
@@ -54,6 +53,9 @@ async function upload() {
 
 }
 
+/* =========================
+   表示
+========================= */
 function render() {
 
   const list =
@@ -146,7 +148,9 @@ function render() {
 
 }
 
-/* プレビュー */
+/* =========================
+   プレビュー
+========================= */
 function previewImages(images) {
 
   let current = 0;
@@ -213,10 +217,32 @@ function previewImages(images) {
 
 }
 
-/* 送信 */
+/* =========================
+   削除
+========================= */
+function deleteGroup(account) {
+
+  const ok =
+    confirm(
+      `口座番号 ${account} の\nOCR結果を削除しますか？`
+    );
+
+  if (!ok) return;
+
+  results =
+    results.filter(
+      r => r.account !== account
+    );
+
+  render();
+
+}
+
+/* =========================
+   送信
+========================= */
 async function send() {
 
-  /* 未登録チェック */
   const unknown =
     results.find(r => !r.roomId);
 
@@ -254,6 +280,7 @@ async function send() {
     const items =
       grouped[roomId];
 
+    /* 画像全部送信 */
     for (let r of items) {
 
       const formData =
@@ -269,10 +296,12 @@ async function send() {
 
     }
 
+    /* 少し待つ */
     await new Promise(
       r => setTimeout(r, 3000)
     );
 
+    /* メッセージ1回 */
     await fetch(
       "/sendMessageOnly",
       {
@@ -294,17 +323,25 @@ async function send() {
 
   alert("送信完了");
 
+  /* 初期化 */
   results = [];
 
-  document.getElementById("list")
-    .innerHTML = "";
+  render();
 
   document.getElementById("files")
     .value = "";
 
+  document.getElementById("file-name")
+    .innerText =
+    "JPG / PNG / HEIC対応";
+
+  closeSend();
+
 }
 
-/* 設定 */
+/* =========================
+   設定
+========================= */
 function addSetting() {
 
   const account =
@@ -366,6 +403,9 @@ async function saveSettings() {
 
 }
 
+/* =========================
+   初期ロード
+========================= */
 window.onload = async () => {
 
   const res =
@@ -378,6 +418,9 @@ window.onload = async () => {
 
 };
 
+/* =========================
+   モーダル
+========================= */
 function openSettings() {
   document.getElementById("settings").style.display = "block";
 }
@@ -401,6 +444,9 @@ function closeSend() {
   document.getElementById("sendBox").style.display = "none";
 }
 
+/* =========================
+   ローディング
+========================= */
 function showLoading(text) {
 
   let loading =
@@ -437,6 +483,10 @@ function hideLoading() {
     loading.style.display = "none";
 
 }
+
+/* =========================
+   ファイル名表示
+========================= */
 function updateFileName() {
 
   const files =
@@ -448,7 +498,7 @@ function updateFileName() {
   if (files.length === 0) {
 
     text.innerText =
-      "JPG / PNG / 対応";
+      "JPG / PNG / HEIC対応";
 
     return;
 
@@ -467,24 +517,10 @@ function updateFileName() {
     `${files.length}枚選択中`;
 
 }
-function deleteGroup(account) {
 
-  const ok =
-    confirm(
-      `口座番号 ${account} の\nOCR結果を削除しますか？`
-    );
-
-  if (!ok) return;
-
-  results =
-    results.filter(
-      r => r.account !== account
-    );
-
-  render();
-
-}
-
+/* =========================
+   グローバル
+========================= */
 window.deleteGroup =
   deleteGroup;
 
@@ -493,9 +529,21 @@ window.updateFileName =
 
 window.upload = upload;
 window.send = send;
-window.openSettings = openSettings;
-window.closeSettings = closeSettings;
-window.openSend = openSend;
-window.closeSend = closeSend;
-window.addSetting = addSetting;
-window.saveSettings = saveSettings;
+
+window.openSettings =
+  openSettings;
+
+window.closeSettings =
+  closeSettings;
+
+window.openSend =
+  openSend;
+
+window.closeSend =
+  closeSend;
+
+window.addSetting =
+  addSetting;
+
+window.saveSettings =
+  saveSettings;

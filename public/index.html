@@ -31,7 +31,39 @@
 <div class="container">
 
   <div class="upload-box">
-    <input type="file" id="files" multiple>
+    <label class="file-label">
+
+  <input
+    type="file"
+    id="files"
+    multiple
+    onchange="updateFileName()"
+  >
+
+  <div class="file-ui">
+
+    <div class="file-icon">
+      📄
+    </div>
+
+    <div class="file-text">
+
+      <div class="file-main">
+        納品書を選択
+      </div>
+
+      <div
+        class="file-sub"
+        id="file-name"
+      >
+        JPG / PNG 対応
+      </div>
+
+    </div>
+
+  </div>
+
+</label>
     <br><br>
     <button class="btn-primary" onclick="upload()">OCR実行</button>
     <button class="btn-secondary" onclick="openSend()">一括送信</button>

@@ -7,11 +7,11 @@ const path = require("path");
 const fetch = require("node-fetch");
 const sharp = require("sharp");
 
+const SHEETS_URL =
+  "https://script.google.com/macros/s/AKfycbw9-UyNbZac8RJ_iyLz-OFwFyQa4nB4o7FSqzgrOkpBWjf8dyppHXLrP1nh_Xt22HlRhw/exec";
+
 const app = express();
 
-/* =========================
-   tmp使用（Vercel対応）
-========================= */
 const upload = multer({
   dest: os.tmpdir()
 });
@@ -29,29 +29,32 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
     const jpgPath =
       path.join(os.tmpdir(), `${Date.now()}.jpg`);
 
-    /* HEIC/JPG/PNG全部JPG化 */
     await sharp(req.file.path)
       .jpeg({ quality: 90 })
       .toFile(jpgPath);
 
-    const image = fs.readFileSync(jpgPath);
+    const image =
+      fs.readFileSync(jpgPath);
 
     const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`,
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type":
+            "application/json"
         },
         body: JSON.stringify({
           requests: [
             {
               image: {
-                content: image.toString("base64")
+                content:
+                  image.toString("base64")
               },
               features: [
                 {
-                  type: "TEXT_DETECTION"
+                  type:
+                    "TEXT_DETECTION"
                 }
               ]
             }
@@ -60,18 +63,17 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
       }
     );
 
-    const data = await response.json();
+    const data =
+      await response.json();
 
     const text =
-      data.responses?.[0]?.fullTextAnnotation?.text || "";
-
-    /* =========================
-       口座番号抽出
-    ========================= */
+      data.responses?.[0]
+        ?.fullTextAnnotation?.text || "";
 
     let account = "不明";
 
-    const lines = text.split("\n");
+    const lines =
+      text.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
 
@@ -81,11 +83,14 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
 
           if (!lines[j]) continue;
 
-          const match = lines[j].match(/\d{6,8}/);
+          const match =
+            lines[j].match(/\d{6,8}/);
 
           if (match) {
+
             account = match[0];
             break;
+
           }
 
         }
@@ -94,7 +99,6 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
 
     }
 
-    /* tmp削除 */
     fs.unlinkSync(req.file.path);
     fs.unlinkSync(jpgPath);
 
@@ -116,34 +120,94 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
 });
 
 /* =========================
+   設定取得
+========================= */
+app.get("/settings", async (req, res) => {
+
+  try {
+
+    const response =
+      await fetch(SHEETS_URL);
+
+    const data =
+      await response.json();
+
+    res.json(data);
+
+  } catch (e) {
+
+    console.error(e);
+
+    res.json([]);
+
+  }
+
+});
+
+/* =========================
+   設定保存
+========================= */
+app.post("/settings", async (req, res) => {
+
+  try {
+
+    await fetch(SHEETS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json"
+      },
+      body:
+        JSON.stringify(req.body)
+    });
+
+    res.json({
+      success: true
+    });
+
+  } catch (e) {
+
+    console.error(e);
+
+    res.status(500).json({
+      error: "保存失敗"
+    });
+
+  }
+
+});
+
+/* =========================
    画像送信
 ========================= */
 app.post("/send", upload.single("file"), async (req, res) => {
 
   try {
 
-    const { roomId } = req.body;
+    const { roomId } =
+      req.body;
 
     const jpgPath =
       path.join(os.tmpdir(), `${Date.now()}.jpg`);
 
-    /* 必ずJPG化 */
     await sharp(req.file.path)
       .jpeg({ quality: 90 })
       .toFile(jpgPath);
 
-    const formData = new FormData();
+    const formData =
+      new FormData();
 
     formData.append(
       "file",
       fs.createReadStream(jpgPath),
       {
         filename: "image.jpg",
-        contentType: "image/jpeg"
+        contentType:
+          "image/jpeg"
       }
     );
 
-    const response = await fetch(
+    await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/files`,
       {
         method: "POST",
@@ -155,10 +219,6 @@ app.post("/send", upload.single("file"), async (req, res) => {
         body: formData
       }
     );
-
-    const result = await response.text();
-
-    console.log(result);
 
     fs.unlinkSync(req.file.path);
     fs.unlinkSync(jpgPath);
@@ -186,7 +246,10 @@ app.post("/sendMessageOnly", async (req, res) => {
 
   try {
 
-    const { message, roomId } = req.body;
+    const {
+      message,
+      roomId
+    } = req.body;
 
     await fetch(
       `https://api.chatwork.com/v2/rooms/${roomId}/messages`,
@@ -198,9 +261,10 @@ app.post("/sendMessageOnly", async (req, res) => {
           "Content-Type":
             "application/x-www-form-urlencoded"
         },
-        body: new URLSearchParams({
-          body: message
-        })
+        body:
+          new URLSearchParams({
+            body: message
+          })
       }
     );
 
@@ -213,7 +277,8 @@ app.post("/sendMessageOnly", async (req, res) => {
     console.error(e);
 
     res.status(500).json({
-      error: "メッセージ送信失敗"
+      error:
+        "メッセージ送信失敗"
     });
 
   }

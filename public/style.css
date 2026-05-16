@@ -51,10 +51,6 @@ body {
   margin-bottom: 20px;
 }
 
-/* ファイル選択 */
-input[type="file"] {
-  font-size: 16px;
-}
 
 /* ボタン（スマホ特化） */
 button {
@@ -308,5 +304,101 @@ textarea {
   height: 26px;
 
   object-fit: contain;
+
+}
+/* =========================
+   ファイルUI
+========================= */
+
+.file-label {
+
+  display: block;
+  width: 100%;
+
+}
+
+.file-label input {
+
+  display: none;
+
+}
+
+.file-ui {
+
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  background: white;
+
+  border:
+    2px dashed #cbd5e1;
+
+  border-radius: 20px;
+
+  padding: 20px;
+
+  transition: 0.2s;
+
+}
+
+.file-ui:active {
+
+  transform: scale(0.98);
+
+}
+
+.file-icon {
+
+  width: 58px;
+  height: 58px;
+
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #2563eb,
+      #3b82f6
+    );
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  font-size: 28px;
+
+  color: white;
+
+  flex-shrink: 0;
+
+}
+
+.file-text {
+
+  overflow: hidden;
+
+}
+
+.file-main {
+
+  font-size: 18px;
+  font-weight: 700;
+
+  color: #111827;
+
+}
+
+.file-sub {
+
+  font-size: 14px;
+
+  color: #64748b;
+
+  margin-top: 4px;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
 }

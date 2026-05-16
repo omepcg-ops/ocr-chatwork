@@ -427,6 +427,39 @@ function hideLoading() {
     loading.style.display = "none";
 
 }
+function updateFileName() {
+
+  const files =
+    document.getElementById("files").files;
+
+  const text =
+    document.getElementById("file-name");
+
+  if (files.length === 0) {
+
+    text.innerText =
+      "JPG / PNG / 対応";
+
+    return;
+
+  }
+
+  if (files.length === 1) {
+
+    text.innerText =
+      files[0].name;
+
+    return;
+
+  }
+
+  text.innerText =
+    `${files.length}枚選択中`;
+
+}
+
+window.updateFileName =
+  updateFileName;
 
 window.upload = upload;
 window.send = send;

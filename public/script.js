@@ -467,6 +467,26 @@ function updateFileName() {
     `${files.length}枚選択中`;
 
 }
+function deleteGroup(account) {
+
+  const ok =
+    confirm(
+      `口座番号 ${account} の\nOCR結果を削除しますか？`
+    );
+
+  if (!ok) return;
+
+  results =
+    results.filter(
+      r => r.account !== account
+    );
+
+  render();
+
+}
+
+window.deleteGroup =
+  deleteGroup;
 
 window.updateFileName =
   updateFileName;

@@ -27,9 +27,12 @@ async function upload() {
     const data =
       await res.json();
 
+    /* 型違い対策 */
     const match =
       settings.find(
-        s => s.account === data.account
+        s =>
+          String(s.account).trim() ===
+          String(data.account).trim()
       );
 
     results.push({
@@ -39,7 +42,8 @@ async function upload() {
       name:
         match ? match.name : "未登録",
       roomId:
-        match ? match.roomId : ""
+        match ? match.roomId : "",
+      isUnknown: !match
     });
 
   }
@@ -82,7 +86,10 @@ function render() {
       const div =
         document.createElement("div");
 
-      div.className = "card";
+      div.className =
+        group.isUnknown
+          ? "card unknown-card"
+          : "card";
 
       div.innerHTML = `
 
@@ -96,7 +103,11 @@ function render() {
 
             <div>
               口座番号:
-              <span class="ok">
+              <span class="${
+                group.isUnknown
+                  ? "error"
+                  : "ok"
+              }">
                 ${group.account}
               </span>
             </div>
@@ -194,6 +205,20 @@ function previewImages(images) {
 
 /* 送信 */
 async function send() {
+
+  /* 未登録チェック */
+  const unknown =
+    results.find(r => !r.roomId);
+
+  if (unknown) {
+
+    alert(
+      `未登録の口座があります\n\n口座番号: ${unknown.account}`
+    );
+
+    return;
+
+  }
 
   showLoading("送信中...");
 

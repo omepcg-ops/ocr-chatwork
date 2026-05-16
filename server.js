@@ -27,10 +27,22 @@ app.post("/ocr", upload.single("file"), async (req, res) => {
   try {
 
     const jpgPath =
-      path.join(os.tmpdir(), `${Date.now()}.jpg`);
+      path.join(
+        os.tmpdir(),
+        `${Date.now()}.jpg`
+      );
 
+    /* =========================
+       圧縮 + JPG変換
+    ========================= */
     await sharp(req.file.path)
-      .jpeg({ quality: 90 })
+      .resize({
+        width: 1400,
+        withoutEnlargement: true
+      })
+      .jpeg({
+        quality: 70
+      })
       .toFile(jpgPath);
 
     const image =
@@ -188,10 +200,22 @@ app.post("/send", upload.single("file"), async (req, res) => {
       req.body;
 
     const jpgPath =
-      path.join(os.tmpdir(), `${Date.now()}.jpg`);
+      path.join(
+        os.tmpdir(),
+        `${Date.now()}.jpg`
+      );
 
+    /* =========================
+       圧縮 + JPG変換
+    ========================= */
     await sharp(req.file.path)
-      .jpeg({ quality: 90 })
+      .resize({
+        width: 1400,
+        withoutEnlargement: true
+      })
+      .jpeg({
+        quality: 70
+      })
       .toFile(jpgPath);
 
     const formData =
